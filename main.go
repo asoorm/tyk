@@ -2,7 +2,6 @@ package main
 
 import (
 	"crypto/tls"
-	"crypto/x509"
 	"fmt"
 	"html/template"
 	"io/ioutil"
@@ -293,6 +292,19 @@ func syncPolicies() {
 	}
 }
 
+func controlAPICheckClientCertificate(certLevel string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if globalConf.Security.ControlAPIUseMutualTLS {
+			if err := validateRequestCertificate(globalConf.Security.Certificates.ControlAPI, r); err != nil {
+				doJSONWrite(w, 403, apiError(err.Error()))
+				return
+			}
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
 // Set up default Tyk control API endpoints - these are global, so need to be added first
 func loadAPIEndpoints(muxer *mux.Router) {
 	hostname := globalConf.HostName
@@ -301,7 +313,7 @@ func loadAPIEndpoints(muxer *mux.Router) {
 	}
 	r := mux.NewRouter()
 	muxer.PathPrefix("/tyk/").Handler(http.StripPrefix("/tyk",
-		checkIsAPIOwner(InstrumentationMW(r)),
+		checkIsAPIOwner(controlAPICheckClientCertificate("/gateway/client", InstrumentationMW(r))),
 	))
 	if hostname != "" {
 		r = r.Host(hostname).Subrouter()
@@ -336,6 +348,7 @@ func loadAPIEndpoints(muxer *mux.Router) {
 	r.HandleFunc("/keys/{keyName:[^/]*}", allowMethods(keyHandler, "POST", "PUT", "GET", "DELETE"))
 	r.HandleFunc("/oauth/clients/{apiID}", allowMethods(oAuthClientHandler, "GET", "DELETE"))
 	r.HandleFunc("/oauth/clients/{apiID}/{keyName:[^/]*}", allowMethods(oAuthClientHandler, "GET", "DELETE"))
+	loadCertEndpoints(r)
 
 	log.WithFields(logrus.Fields{
 		"prefix": "main",
@@ -1113,28 +1126,6 @@ func start(arguments map[string]interface{}) {
 	go reloadQueueLoop()
 }
 
-func getTLSConfigForClient(baseConfig *tls.Config) func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
-	return func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
-		for _, spec := range APISpecs {
-			if spec.UseMutualTLSAuth && (spec.Domain == hello.ServerName || spec.Domain == "") {
-				caCertPool := x509.NewCertPool()
-
-				if spec.MutualTLSCertificate != "" {
-					caCertPool.AppendCertsFromPEM([]byte(spec.MutualTLSCertificate))
-				}
-
-				newConfig := baseConfig.Clone()
-				newConfig.ClientAuth = tls.RequireAndVerifyClientCert
-				newConfig.ClientCAs = caCertPool
-
-				return newConfig, nil
-			}
-		}
-
-		return baseConfig, nil
-	}
-}
-
 func generateListener(listenPort int) (net.Listener, error) {
 	listenAddress := globalConf.ListenAddress
 	if listenPort == 0 {
@@ -1147,27 +1138,15 @@ func generateListener(listenPort int) (net.Listener, error) {
 		log.WithFields(logrus.Fields{
 			"prefix": "main",
 		}).Info("--> Using SSL (https)")
-		certs := make([]tls.Certificate, len(globalConf.HttpServerOptions.Certificates))
-		certNameMap := make(map[string]*tls.Certificate)
-		for i, certData := range globalConf.HttpServerOptions.Certificates {
-			cert, err := tls.LoadX509KeyPair(certData.CertFile, certData.KeyFile)
-			if err != nil {
-				log.WithFields(logrus.Fields{
-					"prefix": "main",
-				}).Fatalf("Server error: loadkeys: %s", err)
-			}
-			certs[i] = cert
-			certNameMap[certData.Name] = &certs[i]
-		}
 
 		config := tls.Config{
-			Certificates:       certs,
-			NameToCertificate:  certNameMap,
-			ServerName:         globalConf.HttpServerOptions.ServerName,
-			MinVersion:         globalConf.HttpServerOptions.MinVersion,
-			InsecureSkipVerify: globalConf.HttpServerOptions.SSLInsecureSkipVerify,
+			GetCertificate: dummyGetCertificate,
+			ServerName:     globalConf.HttpServerOptions.ServerName,
+			MinVersion:     globalConf.HttpServerOptions.MinVersion,
+			ClientAuth:     tls.RequestClientCert,
 		}
-		config.GetConfigForClient = getTLSConfigForClient(&config)
+
+		config.GetConfigForClient = getTLSConfigForClient(&config, listenPort)
 
 		return tls.Listen("tcp", targetPort, &config)
 
@@ -1182,7 +1161,7 @@ func generateListener(listenPort int) (net.Listener, error) {
 		config := tls.Config{
 			GetCertificate: LE_MANAGER.GetCertificate,
 		}
-		config.GetConfigForClient = getTLSConfigForClient(&config)
+		config.GetConfigForClient = getTLSConfigForClient(&config, listenPort)
 
 		return tls.Listen("tcp", targetPort, &config)
 
@@ -1237,6 +1216,13 @@ func startDRL() {
 	}).Info("Initialising distributed rate limiter")
 	setupDRL()
 	startRateLimitNotifications()
+}
+
+func connStateHook(conn net.Conn, state http.ConnState) {
+	if tc, ok := conn.(*tls.Conn); ok {
+		s := tc.ConnectionState()
+		log.Warning(state, s.PeerCertificates, s.TLSUnique, s.VerifiedChains)
+	}
 }
 
 func listen(l, controlListener net.Listener, err error) {
@@ -1314,6 +1300,7 @@ func listen(l, controlListener net.Listener, err error) {
 			go http.Serve(l, nil)
 
 			if !rpcEmergencyMode {
+
 				newServeMux := http.NewServeMux()
 				newServeMux.Handle("/", mainRouter)
 				http.DefaultServeMux = newServeMux

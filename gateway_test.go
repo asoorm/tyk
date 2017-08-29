@@ -2,16 +2,10 @@ package main
 
 import (
 	"bytes"
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
-	"encoding/pem"
 	"fmt"
 	"io"
 	"io/ioutil"
-	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -1037,148 +1031,16 @@ func TestProxyUserAgent(t *testing.T) {
 	}
 }
 
-func genCertificate(template *x509.Certificate) ([]byte, []byte) {
-	priv, _ := rsa.GenerateKey(rand.Reader, 2048)
-
-	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
-	serialNumber, _ := rand.Int(rand.Reader, serialNumberLimit)
-	template.SerialNumber = serialNumber
-	template.BasicConstraintsValid = true
-	template.NotBefore = time.Now()
-	template.NotAfter = time.Now().Add(time.Hour)
-
-	derBytes, _ := x509.CreateCertificate(rand.Reader, template, template, &priv.PublicKey, priv)
-
-	var certPem, keyPem bytes.Buffer
-	pem.Encode(&certPem, &pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
-	pem.Encode(&keyPem, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(priv)})
-
-	return certPem.Bytes(), keyPem.Bytes()
-}
-
-func getTLSClient(cert tls.Certificate, caCert []byte) *http.Client {
-	caCertPool := x509.NewCertPool()
-	caCertPool.AppendCertsFromPEM(caCert)
-
-	// Setup HTTPS client
-	tlsConfig := &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		RootCAs:      caCertPool,
-	}
-	tlsConfig.BuildNameToCertificate()
-	transport := &http.Transport{TLSClientConfig: tlsConfig}
-
-	return &http.Client{Transport: transport}
-}
-
-func buildAndLoadAPI(cb func(spec *APISpec)) {
-	spec := &APISpec{APIDefinition: &apidef.APIDefinition{}}
-	json.Unmarshal([]byte(sampleAPI), spec)
-
-	if cb != nil {
-		cb(spec)
+func buildAndLoadAPI(apiGens ...func(spec *APISpec)) {
+	for i, gen := range apiGens {
+		spec := &APISpec{APIDefinition: &apidef.APIDefinition{}}
+		json.Unmarshal([]byte(sampleAPI), spec)
+		gen(spec)
+		specBytes, _ := json.Marshal(spec)
+		specFilePath := filepath.Join(globalConf.AppPath, spec.APIID+strconv.Itoa(i)+".json")
+		ioutil.WriteFile(specFilePath, specBytes, 0644)
+		defer os.Remove(specFilePath)
 	}
 
-	specBytes, _ := json.Marshal(spec)
-	specFilePath := filepath.Join(globalConf.AppPath, spec.APIID+".json")
-	ioutil.WriteFile(specFilePath, specBytes, 0644)
 	doReload()
-	os.Remove(specFilePath)
-}
-
-func TestMutualTLS(t *testing.T) {
-	// Configure server
-	serverCertPem, serverPrivPem := genCertificate(&x509.Certificate{
-		DNSNames:    []string{"localhost"},
-		IPAddresses: []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::")},
-	})
-
-	serverCertPemFile, _ := ioutil.TempFile("", "server.crt")
-	serverCertPemFile.Write(serverCertPem)
-	serverCertPemFile.Close()
-
-	serverPrivPemFile, _ := ioutil.TempFile("", "server.key")
-	serverPrivPemFile.Write(serverPrivPem)
-	serverPrivPemFile.Close()
-
-	globalConf.HttpServerOptions.UseSSL = true
-	globalConf.ListenPort = 0
-	globalConf.HttpServerOptions.Certificates = []config.CertData{{
-		Name:     "localhost",
-		CertFile: serverCertPemFile.Name(),
-		KeyFile:  serverPrivPemFile.Name(),
-	}}
-	ln, _ := generateListener(0)
-	listen(ln, nil, nil)
-
-	defer func() {
-		ln.Close()
-		globalConf.HttpServerOptions.UseSSL = false
-		globalConf.HttpServerOptions.Certificates = []config.CertData{}
-		globalConf.ListenPort = 8080
-		os.Remove(serverPrivPemFile.Name())
-		os.Remove(serverCertPemFile.Name())
-	}()
-
-	// Initialize client certificates
-	clientCertPerm, clientPrivPem := genCertificate(&x509.Certificate{})
-	clientCert, _ := tls.X509KeyPair(clientCertPerm, clientPrivPem)
-
-	// Start of the tests
-	// To make SSL SNI work we need to use domains
-	baseURL := "https://" + strings.Replace(ln.Addr().String(), "[::]", "localhost", -1)
-
-	t.Run("API without mutual TLS", func(t *testing.T) {
-		buildAndLoadAPI(nil)
-
-		client := getTLSClient(clientCert, serverCertPem)
-		_, err := client.Get(baseURL)
-
-		if err != nil {
-			t.Error("Should work as ordinary api", err)
-		}
-	})
-
-	t.Run("MutualTLSCertificate not set", func(t *testing.T) {
-		buildAndLoadAPI(func(spec *APISpec) {
-			spec.UseMutualTLSAuth = true
-		})
-
-		client := getTLSClient(clientCert, serverCertPem)
-		_, err := client.Get(baseURL)
-
-		if err == nil {
-			t.Error("Should reject unknown certificate")
-		}
-	})
-
-	t.Run("MutualTLSCertificate same as client certificate", func(t *testing.T) {
-		buildAndLoadAPI(func(spec *APISpec) {
-			spec.UseMutualTLSAuth = true
-			spec.MutualTLSCertificate = string(clientCertPerm)
-		})
-
-		client := getTLSClient(clientCert, serverCertPem)
-		_, err := client.Get(baseURL)
-
-		if err != nil {
-			t.Error("Mutual TLS should work", err)
-		}
-	})
-
-	t.Run("MutualTLSCertificate differ from client certificate", func(t *testing.T) {
-		clientCertPerm2, _ := genCertificate(&x509.Certificate{})
-
-		buildAndLoadAPI(func(spec *APISpec) {
-			spec.UseMutualTLSAuth = true
-			spec.MutualTLSCertificate = string(clientCertPerm2)
-		})
-
-		client := getTLSClient(clientCert, serverCertPem)
-		_, err := client.Get(baseURL)
-
-		if err == nil {
-			t.Error("Should reject wrong certificate")
-		}
-	})
 }

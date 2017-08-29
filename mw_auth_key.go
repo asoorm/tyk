@@ -68,6 +68,10 @@ func (k *AuthKey) ProcessRequest(w http.ResponseWriter, r *http.Request, _ inter
 		}
 	}
 
+	if key == "" && r.TLS != nil && len(r.TLS.PeerCertificates) > 0 {
+		key = certSHA256(r.TLS.PeerCertificates[0].Raw)
+	}
+
 	if key == "" {
 		// No header value, fail
 		log.WithFields(logrus.Fields{

@@ -282,7 +282,8 @@ type APIDefinition struct {
 	} `bson:"auth" json:"auth"`
 	UseBasicAuth            bool                 `bson:"use_basic_auth" json:"use_basic_auth"`
 	UseMutualTLSAuth        bool                 `bson:"use_mutual_tls_auth" json:"use_mutual_tls_auth"`
-	MutualTLSCertificate    string               `bson:"mutual_tls_certificate" json:"mutual_tls_certificate"`
+	ClientCertificates     []string              `bson:"client_certificates" json:"client_certificates"`
+	UpstreamCertificates   map[string]string     `bson:"upstream_certificates" json:"upstream_certificates"`
 	EnableJWT               bool                 `bson:"enable_jwt" json:"enable_jwt"`
 	UseStandardAuth         bool                 `bson:"use_standard_auth" json:"use_standard_auth"`
 	EnableCoProcessAuth     bool                 `bson:"enable_coprocess_auth" json:"enable_coprocess_auth"`

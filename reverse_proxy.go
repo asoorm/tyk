@@ -451,6 +451,36 @@ func httpTransport(timeOut int, rw http.ResponseWriter, req *http.Request, p *Re
 	return transport
 }
 
+func getUpstreamCertificate(host string, spec *APISpec) (cert *tls.Certificate) {
+	var certID string
+
+	for _, m := range []map[string]string{globalConf.Security.Certificates.Upstream, spec.UpstreamCertificates} {
+		if len(m) == 0 {
+			continue
+		}
+
+		if id, ok := m["*"]; ok {
+			certID = id
+		}
+
+		if id, ok := m[host]; ok {
+			certID = id
+		}
+	}
+
+	if certID == "" {
+		return nil
+	}
+
+	certs := fetchCertificates([]string{certID}, withPrivateKeys)
+
+	if len(certs) == 0 {
+		return nil
+	}
+
+	return certs[0]
+}
+
 func (p *ReverseProxy) WrappedServeHTTP(rw http.ResponseWriter, req *http.Request, withCache bool) *http.Response {
 	// 1. Check if timeouts are set for this endpoint
 	_, timeout := p.CheckHardTimeoutEnforced(p.TykAPISpec, req)
@@ -531,6 +561,12 @@ func (p *ReverseProxy) WrappedServeHTTP(rw http.ResponseWriter, req *http.Reques
 
 	// Circuit breaker
 	breakerEnforced, breakerConf := p.CheckCircuitBreakerEnforced(p.TykAPISpec, req)
+
+	if cert := getUpstreamCertificate(outreq.Host, p.TykAPISpec); cert != nil {
+		transport.(*TykTransporter).TLSClientConfig.Certificates = []tls.Certificate{*cert}
+	} else {
+		transport.(*TykTransporter).TLSClientConfig.Certificates = nil
+	}
 
 	var res *http.Response
 	var err error

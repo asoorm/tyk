@@ -297,6 +297,11 @@ func processSpec(spec *APISpec,
 		appendMiddleware(&chainArray, &VersionCheck{BaseMiddleware: baseMid})
 		appendMiddleware(&chainArray, &RequestSizeLimitMiddleware{baseMid})
 		appendMiddleware(&chainArray, &TrackEndpointMiddleware{baseMid})
+
+		if spec.UseMutualTLSAuth {
+			appendMiddleware(&chainArray, &CertificateCheckMW{BaseMiddleware: baseMid})
+		}
+
 		appendMiddleware(&chainArray, &TransformMiddleware{baseMid})
 		appendMiddleware(&chainArray, &TransformHeaders{BaseMiddleware: baseMid})
 		appendMiddleware(&chainArray, &RedisCacheMiddleware{BaseMiddleware: baseMid, CacheStore: cacheStore})
@@ -320,7 +325,6 @@ func processSpec(spec *APISpec,
 		chain = alice.New(chainArray...).Then(&DummyProxyHandler{SH: SuccessHandler{baseMid}})
 
 	} else {
-
 		var chainArray []alice.Constructor
 
 		handleCORS(&chainArray, spec)
@@ -363,6 +367,14 @@ func processSpec(spec *APISpec,
 		useOttoAuth := false
 		if !useCoProcessAuth {
 			useOttoAuth = mwDriver == apidef.OttoDriver && spec.EnableCoProcessAuth
+		}
+
+		if spec.UseMutualTLSAuth {
+			log.WithFields(logrus.Fields{
+				"prefix":   "main",
+				"api_name": spec.Name,
+			}).Info("Checking security policy: Mutual TLS")
+			appendMiddleware(&chainArray, &CertificateCheckMW{BaseMiddleware: baseMid})
 		}
 
 		if spec.UseBasicAuth {
