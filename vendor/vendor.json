@@ -199,10 +199,10 @@
 			"versionExact": "v1.4.0"
 		},
 		{
-			"checksumSHA1": "tP/Ohi+jei+mhMoXH5iEGav3ZTE=",
+			"checksumSHA1": "l9la0anu18dj3MeD4pYXnvzjFdU=",
 			"path": "github.com/jeffail/tunny",
-			"revision": "c757dde1c2969a4756e8a99622e2f2ddbab35b10",
-			"revisionTime": "2016-10-22T00:10:56Z"
+			"revision": "452a8e97d6a39fdd8fb5fdf1327eed2bf0c3429c",
+			"revisionTime": "2017-11-07T12:52:07Z"
 		},
 		{
 			"checksumSHA1": "OBvAHqWjdI4NQVAqTkcQAdTuCFY=",

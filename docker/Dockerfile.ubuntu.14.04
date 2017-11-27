@@ -1,0 +1,15 @@
+FROM golang:1.8.5 as step1
+WORKDIR /go/src/github.com/TykTechnologies/tyk
+COPY . .
+#RUN go get -u github.com/kardianos/govendor && \
+#    govendor fetch github.com/jeffail/tunny && \
+RUN ls ./vendor/github.com/jeffail/tunny
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o tyk .
+
+FROM alpine:3.6 as step2
+WORKDIR /opt/tyk
+COPY --from=step1 /go/src/github.com/TykTechnologies/tyk/tyk .
+COPY --from=step1 /go/src/github.com/TykTechnologies/tyk/templates ./templates
+RUN pwd && ls -al
+
+CMD ["./tyk"]
