@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/base64"
 	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -38,11 +39,11 @@ func TestBasicAuth(t *testing.T) {
 
 	ts.Run(t, []test.TestCase{
 		// Create base auth based key
-		{Method: "POST", Path: "/tyk/keys/defaultuser", Data: session, AdminAuth: true, Code: 200},
-		{Method: "GET", Path: "/", Code: 401, BodyMatch: `Authorization field missing`},
-		{Method: "GET", Path: "/", Headers: validPassword, Code: 200},
-		{Method: "GET", Path: "/", Headers: wrongPassword, Code: 401},
-		{Method: "GET", Path: "/", Headers: wrongFormat, Code: 400, BodyMatch: `Attempted access with malformed header, values not in basic auth format`},
-		{Method: "GET", Path: "/", Headers: malformed, Code: 400, BodyMatch: `Attempted access with malformed header, auth data not encoded correctly`},
+		{Method: "POST", Path: "/tyk/keys/defaultuser", Data: session, AdminAuth: true, Code: http.StatusOK},
+		{Method: "GET", Path: "/", Code: http.StatusUnauthorized, BodyMatch: `Authorization field missing`},
+		{Method: "GET", Path: "/", Headers: validPassword, Code: http.StatusOK},
+		{Method: "GET", Path: "/", Headers: wrongPassword, Code: http.StatusUnauthorized},
+		{Method: "GET", Path: "/", Headers: wrongFormat, Code: http.StatusBadRequest, BodyMatch: `Attempted access with malformed header, not in basic auth format`},
+		{Method: "GET", Path: "/", Headers: malformed, Code: http.StatusBadRequest, BodyMatch: `Attempted access with malformed header, auth data not encoded correctly`},
 	}...)
 }

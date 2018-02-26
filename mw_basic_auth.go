@@ -12,6 +12,13 @@ import (
 	"github.com/TykTechnologies/tyk/user"
 )
 
+const (
+	authFieldMissing            = "Authorization field missing"
+	malformedHeaderNotBasicAuth = "Attempted access with malformed header, not in basic auth format"
+	malformedHeaderBadEncoding  = "Attempted access with malformed header, auth data not encoded correctly"
+	notAuthorized               = "Not authorised"
+)
+
 // BasicAuthKeyIsValid uses a username instead of
 type BasicAuthKeyIsValid struct {
 	BaseMiddleware
@@ -30,7 +37,7 @@ func (k *BasicAuthKeyIsValid) requestForBasicAuth(w http.ResponseWriter, msg str
 	authReply := "Basic realm=\"" + k.Spec.Name + "\""
 
 	w.Header().Add("WWW-Authenticate", authReply)
-	return errors.New(msg), 401
+	return errors.New(msg), http.StatusUnauthorized
 }
 
 // ProcessRequest will run any checks on the request on the way through the system, return an error to have the chain fail
@@ -41,7 +48,7 @@ func (k *BasicAuthKeyIsValid) ProcessRequest(w http.ResponseWriter, r *http.Requ
 		// No header value, fail
 		logEntry.Info("Attempted access with malformed header, no auth header found.")
 
-		return k.requestForBasicAuth(w, "Authorization field missing")
+		return k.requestForBasicAuth(w, authFieldMissing)
 	}
 
 	bits := strings.Split(token, " ")
@@ -49,7 +56,7 @@ func (k *BasicAuthKeyIsValid) ProcessRequest(w http.ResponseWriter, r *http.Requ
 		// Header malformed
 		logEntry.Info("Attempted access with malformed header, header not in basic auth format.")
 
-		return errors.New("Attempted access with malformed header, header not in basic auth format"), 400
+		return errors.New(malformedHeaderNotBasicAuth), http.StatusBadRequest
 	}
 
 	// Decode the username:password string
@@ -57,7 +64,7 @@ func (k *BasicAuthKeyIsValid) ProcessRequest(w http.ResponseWriter, r *http.Requ
 	if err != nil {
 		logEntry.Info("Base64 Decoding failed of basic auth data: ", err)
 
-		return errors.New("Attempted access with malformed header, auth data not encoded correctly"), 400
+		return errors.New(malformedHeaderBadEncoding), http.StatusBadRequest
 	}
 
 	authValues := strings.Split(string(authvaluesStr), ":")
@@ -65,7 +72,7 @@ func (k *BasicAuthKeyIsValid) ProcessRequest(w http.ResponseWriter, r *http.Requ
 		// Header malformed
 		logEntry.Info("Attempted access with malformed header, values not in basic auth format.")
 
-		return errors.New("Attempted access with malformed header, values not in basic auth format"), 400
+		return errors.New(malformedHeaderNotBasicAuth), http.StatusBadRequest
 	}
 
 	// Check if API key valid
@@ -81,7 +88,7 @@ func (k *BasicAuthKeyIsValid) ProcessRequest(w http.ResponseWriter, r *http.Requ
 		// Report in health check
 		reportHealthValue(k.Spec, KeyFailure, "-1")
 
-		return k.requestForBasicAuth(w, "User not authorised")
+		return k.requestForBasicAuth(w, notAuthorized)
 	}
 
 	// Ensure that the username and password match up
@@ -107,7 +114,7 @@ func (k *BasicAuthKeyIsValid) ProcessRequest(w http.ResponseWriter, r *http.Requ
 		// Report in health check
 		reportHealthValue(k.Spec, KeyFailure, "-1")
 
-		return k.requestForBasicAuth(w, "User not authorised")
+		return k.requestForBasicAuth(w, notAuthorized)
 	}
 
 	// Set session state on context, we will need it later
@@ -118,5 +125,5 @@ func (k *BasicAuthKeyIsValid) ProcessRequest(w http.ResponseWriter, r *http.Requ
 	}
 
 	// Request is valid, carry on
-	return nil, 200
+	return nil, http.StatusOK
 }
