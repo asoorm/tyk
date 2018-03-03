@@ -46,3 +46,33 @@ func TestBasicAuth(t *testing.T) {
 		{Method: "GET", Path: "/", Headers: malformed, Code: 400, BodyMatch: `Attempted access with malformed header, auth data not encoded correctly`},
 	}...)
 }
+
+func BenchmarkBasicAuthKeyIsValid_ProcessRequest(b *testing.B) {
+	ts := newTykTestServer()
+	defer ts.Close()
+
+	session := createStandardSession()
+	session.BasicAuthData.Password = "password"
+	session.AccessRights = map[string]user.AccessDefinition{"test": {APIID: "test", Versions: []string{"v1"}}}
+
+	buildAndLoadAPI(func(spec *APISpec) {
+		spec.UseBasicAuth = true
+		spec.UseKeylessAccess = false
+		spec.Proxy.ListenPath = "/"
+		spec.OrgID = "default"
+	})
+
+	b.ReportAllocs()
+
+	basicAuthHeader := map[string]string{"Authorization": genAuthHeader("user", "password")}
+
+	ts.Run(b, []test.TestCase{
+		{Method: "POST", Path: "/tyk/keys/defaultuser", Data: session, AdminAuth: true, Code: 200},
+	}...)
+
+	for i := 0; i < b.N; i++ {
+		ts.Run(b, test.TestCase{
+			Headers: basicAuthHeader, Code: 200,
+		})
+	}
+}
