@@ -11,8 +11,8 @@ import (
 )
 
 type RevProxyTransform struct {
-	Headers     []string // List of HTTP headers to be modified
-	Target_host string   // Target host for reverse proxy
+	Headers    []string // List of HTTP headers to be modified
+	TargetHost string   // Target host for reverse proxy
 }
 
 type HeaderTransformOptions struct {
@@ -36,7 +36,7 @@ func (h *HeaderTransform) HandleResponse(rw http.ResponseWriter,
 	res *http.Response, req *http.Request, ses *user.SessionState) error {
 
 	// Parse target_host parameter from configuration
-	target_url, err := url.Parse(h.config.RevProxyTransform.Target_host)
+	targetUrl, err := url.Parse(h.config.RevProxyTransform.TargetHost)
 	if err != nil {
 		return err
 	}
@@ -48,9 +48,9 @@ func (h *HeaderTransform) HandleResponse(rw http.ResponseWriter,
 			continue
 		}
 		// Replace scheme
-		val = strings.Replace(val, h.Spec.target.Scheme, target_url.Scheme, -1)
+		val = strings.Replace(val, h.Spec.target.Scheme, targetUrl.Scheme, -1)
 		// Replace host
-		val = strings.Replace(val, h.Spec.target.Host, target_url.Host, -1)
+		val = strings.Replace(val, h.Spec.target.Host, targetUrl.Host, -1)
 		// Transform path
 		if h.Spec.Proxy.StripListenPath {
 			if len(h.Spec.target.Path) != 0 {
