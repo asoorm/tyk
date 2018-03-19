@@ -1,8 +1,10 @@
 package main
 
 import (
+	"crypto/tls"
 	"fmt"
 	"net/http"
+	"net/http/httputil"
 	"strconv"
 	"time"
 
@@ -80,8 +82,13 @@ func createMiddleware(mw TykMiddleware) func(http.Handler) http.Handler {
 				h.ServeHTTP(w, r)
 				return
 			}
+
 			err, errCode := mw.ProcessRequest(w, r, mwConf)
 			if err != nil {
+
+				if errCode == http.StatusForbidden {
+					loopbackCORS(w, r, mw)
+				}
 
 				handler := ErrorHandler{mw.Base()}
 				handler.HandleError(w, r, err.Error(), errCode)
@@ -104,6 +111,77 @@ func createMiddleware(mw TykMiddleware) func(http.Handler) http.Handler {
 			job.TimingKv(eventName+".exec_time", time.Since(startTime).Nanoseconds(), meta)
 		})
 	}
+}
+
+// loopbackCORS sends an OPTIONS request via loopback to the upstream.
+// Given: CORS is not handled by the gateway
+//   and OptionsPassthrough is set to true
+// When: an Origin header is present on the request
+// Then: it performs an OPTIONS request via loopback and writes the upstream CORS headers to the error response
+func loopbackCORS(w http.ResponseWriter, r *http.Request, mw TykMiddleware) {
+	log := log.WithField("prefix", "middleware.loopbackCORS")
+
+	if mw.Base().Spec.CORS.Enable {
+		log.Debug("gateway not handling CORS - returning")
+		return
+	}
+
+	if !mw.Base().Spec.CORS.OptionsPassthrough {
+		log.Debug("options passthrough is false - returning")
+		// dont run if OptionsPassthrough is false
+		return
+	}
+
+	if r.Header.Get("Origin") == "" {
+		log.Debug("no origin header set in request so not a browser - returning")
+		// all browsers set this header, but not all servers do
+		// dont run if Origin header is not set or is empty string
+		return
+	}
+
+	// we don't need the request body for a CORS request
+	corsRequest := r
+	corsRequest.Method = http.MethodOptions
+	corsRequest.RequestURI = ""
+
+	corsRequest.URL.Scheme = "http"
+	if config.Global.HttpServerOptions.UseSSL {
+		corsRequest.URL.Scheme += "s"
+	}
+
+	corsRequest.URL.Host = fmt.Sprintf("localhost:%d", config.Global.ListenPort)
+
+	dump, err := httputil.DumpRequest(r, true)
+	if err != nil {
+		http.Error(w, fmt.Sprint(err), http.StatusInternalServerError)
+		return
+	}
+
+	log.Debugf("loopback request dump\n%s", string(dump))
+
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: config.Global.HttpServerOptions.SSLInsecureSkipVerify},
+	}
+
+	corsClient := &http.Client{Transport: tr}
+	corsRes, err := corsClient.Do(corsRequest)
+	if err != nil {
+		log.WithError(err).Error("Error from upstream OPTIONS request, ignoring and returning default response")
+	}
+
+	corsHeaders := map[string]string{}
+	corsHeaders["Access-Control-Allow-Origin"] = corsRes.Header.Get("Access-Control-Allow-Origin")
+	corsHeaders["Access-Control-Allow-Methods"] = corsRes.Header.Get("Access-Control-Allow-Methods")
+	corsHeaders["Access-Control-Allow-Credentials"] = corsRes.Header.Get("Access-Control-Allow-Credentials")
+	corsHeaders["Access-Control-Max-Age"] = corsRes.Header.Get("Access-Control-Max-Age")
+
+	for k, v := range corsHeaders {
+		if v != "" {
+			w.Header().Set(k, v)
+		}
+	}
+
+	log.Debugf("injected headers: %+v\n", corsHeaders)
 }
 
 func mwAppendEnabled(chain *[]alice.Constructor, mw TykMiddleware) bool {
