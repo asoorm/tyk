@@ -322,9 +322,10 @@ type APIDefinition struct {
 	UseOpenID        bool          `bson:"use_openid" json:"use_openid"`
 	OpenIDOptions    OpenIDOptions `bson:"openid_options" json:"openid_options"`
 	Oauth2Meta       struct {
-		AllowedAccessTypes     []osin.AccessRequestType    `bson:"allowed_access_types" json:"allowed_access_types"`
-		AllowedAuthorizeTypes  []osin.AuthorizeRequestType `bson:"allowed_authorize_types" json:"allowed_authorize_types"`
-		AuthorizeLoginRedirect string                      `bson:"auth_login_redirect" json:"auth_login_redirect"`
+		AllowedAccessTypes        []osin.AccessRequestType    `bson:"allowed_access_types" json:"allowed_access_types"`
+		AllowedAuthorizeTypes     []osin.AuthorizeRequestType `bson:"allowed_authorize_types" json:"allowed_authorize_types"`
+		AuthorizeLoginRedirect    string                      `bson:"auth_login_redirect" json:"auth_login_redirect"`
+		AllowClientSecretInParams bool                        `bson:"allow_client_secret_in_params" json:"allow_client_secret_in_params"`
 	} `bson:"oauth_meta" json:"oauth_meta"`
 	Auth                    Auth                 `bson:"auth" json:"auth"`
 	UseBasicAuth            bool                 `bson:"use_basic_auth" json:"use_basic_auth"`

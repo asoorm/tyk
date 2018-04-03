@@ -170,7 +170,6 @@ func (o *OAuthHandlers) HandleAuthorizePassthrough(w http.ResponseWriter, r *htt
 // OAuth tokens without revealing tokens before they are requested).
 func (o *OAuthHandlers) HandleAccessRequest(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-
 	// Handle response
 	resp := o.Manager.HandleAccess(r)
 	msg := o.generateOAuthOutputFromOsinResponse(resp)
@@ -330,6 +329,7 @@ func (o *OAuthManager) HandleAccess(r *http.Request) *osin.Response {
 		}
 
 	}
+
 	if resp.IsError && resp.InternalError != nil {
 		log.Error("ERROR: ", resp.InternalError)
 	}
