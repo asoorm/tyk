@@ -6,13 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"time"
 
-	osin "github.com/lonelycode/osin"
+	"github.com/lonelycode/osin"
 	"github.com/satori/go.uuid"
 	"golang.org/x/crypto/bcrypt"
-
-	"strconv"
 
 	"github.com/TykTechnologies/tyk/config"
 	"github.com/TykTechnologies/tyk/storage"
@@ -20,7 +19,7 @@ import (
 )
 
 /*
-Sample Oaut Flow:
+Sample Oauth Flow:
 -----------------
 
 1. Request to /authorize
