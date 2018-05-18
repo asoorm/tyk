@@ -27,6 +27,9 @@ func (h *ResponseTransformMiddleware) Init(c interface{}, spec *APISpec) error {
 }
 
 func respBodyReader(req *http.Request, resp *http.Response) io.ReadCloser {
+
+	_ = copyResponse(resp)
+
 	if req.Header.Get("Accept-Encoding") == "" {
 		return resp.Body
 	}
