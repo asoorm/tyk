@@ -3,11 +3,10 @@ package apidef
 import (
 	"encoding/base64"
 	"encoding/json"
+	"time"
 
 	"github.com/lonelycode/osin"
 	"gopkg.in/mgo.v2/bson"
-
-	"time"
 
 	"github.com/TykTechnologies/gojsonschema"
 	"github.com/TykTechnologies/tyk/regexp"
@@ -188,6 +187,15 @@ type ValidatePathMeta struct {
 	ErrorResponseCode int `bson:"error_response_code" json:"error_response_code"`
 }
 
+type ServerlessMeta struct {
+	Path   string `bson:"path" json:"path"`
+	Method string `bson:"method" json:"method"`
+	// Provider allows specification of the serverless provider. `aws-lambda`, `azure-functions`.
+	Provider string `bson:"provider" json:"provider"`
+	// Provider specific configuration rules
+	ProviderConfig map[string]interface{} `bson:"provider_config" json:"provider_config"`
+}
+
 type ExtendedPathsSet struct {
 	Ignored                 []EndPointMeta        `bson:"ignored" json:"ignored,omitempty"`
 	WhiteList               []EndPointMeta        `bson:"white_list" json:"white_list,omitempty"`
@@ -208,6 +216,7 @@ type ExtendedPathsSet struct {
 	TrackEndpoints          []TrackEndpointMeta   `bson:"track_endpoints" json:"track_endpoints,omitempty"`
 	DoNotTrackEndpoints     []TrackEndpointMeta   `bson:"do_not_track_endpoints" json:"do_not_track_endpoints,omitempty"`
 	ValidateJSON            []ValidatePathMeta    `bson:"validate_json" json:"validate_json,omitempty"`
+	Serverless              []ServerlessMeta      `bson:"serverless" json:"serverless,omitempty"`
 }
 
 type VersionInfo struct {

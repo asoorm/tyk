@@ -68,6 +68,7 @@ const (
 	RequestTracked
 	RequestNotTracked
 	ValidateJSONRequest
+	InvokeServerlessFunction
 )
 
 // RequestStatus is a custom type to avoid collisions
@@ -123,6 +124,7 @@ type URLSpec struct {
 	TrackEndpoint             apidef.TrackEndpointMeta
 	DoNotTrackEndpoint        apidef.TrackEndpointMeta
 	ValidatePathMeta          apidef.ValidatePathMeta
+	InvokeServerless          apidef.ServerlessMeta
 }
 
 type TransformSpec struct {
@@ -785,6 +787,22 @@ func (a APIDefinitionLoader) compileValidateJSONPathspathSpec(paths []apidef.Val
 	return urlSpec
 }
 
+func (a APIDefinitionLoader) compileInvokeServerlessPathsSpec(paths []apidef.ServerlessMeta, stat URLStatus) []URLSpec {
+	urlSpec := make([]URLSpec, len(paths))
+
+	for i, stringSpec := range paths {
+		newSpec := URLSpec{}
+		a.generateRegex(stringSpec.Path, &newSpec, stat)
+		// Extend with method actions
+
+		newSpec.InvokeServerless = stringSpec
+
+		urlSpec[i] = newSpec
+	}
+
+	return urlSpec
+}
+
 func (a APIDefinitionLoader) compileUnTrackedEndpointPathspathSpec(paths []apidef.TrackEndpointMeta, stat URLStatus) []URLSpec {
 	urlSpec := []URLSpec{}
 
@@ -821,6 +839,7 @@ func (a APIDefinitionLoader) getExtendedPathSpecs(apiVersionDef apidef.VersionIn
 	trackedPaths := a.compileTrackedEndpointPathspathSpec(apiVersionDef.ExtendedPaths.TrackEndpoints, RequestTracked)
 	unTrackedPaths := a.compileUnTrackedEndpointPathspathSpec(apiVersionDef.ExtendedPaths.DoNotTrackEndpoints, RequestNotTracked)
 	validateJSON := a.compileValidateJSONPathspathSpec(apiVersionDef.ExtendedPaths.ValidateJSON, ValidateJSONRequest)
+	invokeServerlessFunction := a.compileInvokeServerlessPathsSpec(apiVersionDef.ExtendedPaths.Serverless, InvokeServerlessFunction)
 
 	combinedPath := []URLSpec{}
 	combinedPath = append(combinedPath, ignoredPaths...)
@@ -842,6 +861,7 @@ func (a APIDefinitionLoader) getExtendedPathSpecs(apiVersionDef apidef.VersionIn
 	combinedPath = append(combinedPath, trackedPaths...)
 	combinedPath = append(combinedPath, unTrackedPaths...)
 	combinedPath = append(combinedPath, validateJSON...)
+	combinedPath = append(combinedPath, invokeServerlessFunction...)
 
 	return combinedPath, len(whiteListPaths) > 0
 }
