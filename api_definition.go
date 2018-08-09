@@ -100,6 +100,7 @@ const (
 	StatusRequesTracked            RequestStatus = "Request Tracked"
 	StatusRequestNotTracked        RequestStatus = "Request Not Tracked"
 	StatusValidateJSON             RequestStatus = "Validate JSON"
+	StatusInvokeServerless         RequestStatus = "Invoke Serverless"
 )
 
 // URLSpec represents a flattened specification for URLs, used to check if a proxy URL
@@ -918,6 +919,8 @@ func (a *APISpec) getURLStatus(stat URLStatus) RequestStatus {
 		return StatusRequestNotTracked
 	case ValidateJSONRequest:
 		return StatusValidateJSON
+	case InvokeServerlessFunction:
+		return StatusInvokeServerless
 
 	default:
 		log.Error("URL Status was not one of Ignored, Blacklist or WhiteList! Blocking.")
@@ -1088,6 +1091,10 @@ func (a *APISpec) CheckSpecMatchesStatus(r *http.Request, rxPaths []URLSpec, mod
 		case ValidateJSONRequest:
 			if r.Method == v.ValidatePathMeta.Method {
 				return true, &v.ValidatePathMeta
+			}
+		case InvokeServerlessFunction:
+			if r.Method == v.InvokeServerless.Method {
+				return true, &v.InvokeServerless
 			}
 		}
 	}

@@ -17,11 +17,13 @@
         "extended_paths": {
           "serverless": [
             {
-              "path": "/serverless",
-              "method": "GET",
+              "path": "serverless",
+              "method": "POST",
               "provider": "aws-lambda",
               "provider_config": {
-                "foo": "bar"
+                "Region": "eu-west-2",
+                "Name": "HelloWorldGoFunction",
+                "Version": "$LATEST"
               }
             }
           ],

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io/ioutil"
 	"net/http"
 
 	"github.com/asoorm/serverless/provider"
@@ -45,33 +46,45 @@ func (k *Serverless) ProcessRequest(w http.ResponseWriter, r *http.Request, _ in
 	vPathMeta := meta.(*apidef.ServerlessMeta)
 
 	var p provider.Provider
+	var c provider.Conf
 	var err error
 	switch vPathMeta.Provider {
 	case "aws-lambda":
 		p, err = aws.NewProvider()
+		c = aws.Conf{
+			Region: vPathMeta.ProviderConfig["Region"].(string),
+		}
 		break
 	case "azure-functions":
 		p, err = azure.NewProvider()
+		c = azure.Conf{}
 		break
 	default:
-		return errors.New("unknown provider"), mwStatusRespond
+		log.Errorf("serverless misconfigured, unknown provider %s", vPathMeta.Provider)
+		return errors.New("unknown provider"), http.StatusInternalServerError
 	}
-
 	if err != nil {
-		return errors.Wrap(err, "unable to load provider"), mwStatusRespond
+		return errors.Wrap(err, "unable to load provider"), http.StatusInternalServerError
 	}
 
-	if err := p.Init(k.Spec.GlobalConfig.ServerlessProviderConfigs[vPathMeta.Provider]); err != nil {
-		return errors.Wrap(err, "unable to init provider"), mwStatusRespond
+	if err := p.Init(c); err != nil {
+		return errors.Wrap(err, "unable to init provider"), http.StatusInternalServerError
 	}
 
 	function := provider.Function{
 		Name:    vPathMeta.ProviderConfig["Name"].(string),
 		Version: vPathMeta.ProviderConfig["Version"].(string),
 	}
-	res, err := p.Invoke(function, nil)
+
+	bodyCloser := copyBody(r.Body)
+	body, err := ioutil.ReadAll(bodyCloser)
 	if err != nil {
-		return errors.Wrap(err, "unable to invoke function"), mwStatusRespond
+		return errors.Wrap(err, "unable to read request body"), http.StatusInternalServerError
+	}
+
+	res, err := p.Invoke(function, body)
+	if err != nil {
+		return errors.Wrap(err, "unable to invoke function"), http.StatusInternalServerError
 	}
 
 	w.WriteHeader(res.StatusCode)
