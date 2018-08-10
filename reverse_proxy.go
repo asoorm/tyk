@@ -234,9 +234,9 @@ func TykNewSingleHostReverseProxy(target *url.URL, spec *APISpec) *ReverseProxy 
 		if targetToUse == target {
 			req.URL.Scheme = targetToUse.Scheme
 			req.URL.Host = targetToUse.Host
-			req.URL.Path = singleJoiningSlash(targetToUse.Path, req.URL.Path, spec.Proxy.DisableStripSlash)
+			req.URL.Path = singleJoiningSlash(targetToUse.Path, req.URL.Path)
 			if req.URL.RawPath != "" {
-				req.URL.RawPath = singleJoiningSlash(targetToUse.Path, req.URL.RawPath, spec.Proxy.DisableStripSlash)
+				req.URL.RawPath = singleJoiningSlash(targetToUse.Path, req.URL.RawPath)
 			}
 		}
 		if !spec.Proxy.PreserveHostHeader {
@@ -270,7 +270,7 @@ func TykNewSingleHostReverseProxy(target *url.URL, spec *APISpec) *ReverseProxy 
 		TykAPISpec:    spec,
 		FlushInterval: time.Duration(spec.GlobalConfig.HttpServerOptions.FlushInterval) * time.Millisecond,
 	}
-	proxy.ErrorHandler.BaseMiddleware = BaseMiddleware{Spec: spec, Proxy: proxy}
+	proxy.ErrorHandler.BaseMiddleware = BaseMiddleware{spec, proxy}
 	return proxy
 }
 
@@ -317,10 +317,7 @@ func defaultTransport() *http.Transport {
 	}
 }
 
-func singleJoiningSlash(a, b string, disableStripSlash bool) string {
-	if disableStripSlash && len(b) == 0 {
-		return a
-	}
+func singleJoiningSlash(a, b string) string {
 	a = strings.TrimRight(a, "/")
 	b = strings.TrimLeft(b, "/")
 	if len(b) > 0 {
@@ -362,20 +359,12 @@ var hopHeaders = []string{
 }
 
 func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) *http.Response {
-	resp := p.WrappedServeHTTP(rw, req, recordDetail(req, config.Global()))
-
-	// make response body to be nopCloser and re-readable before serve it through chain of middlewares
-	nopCloseResponseBody(resp)
-
-	return resp
+	return p.WrappedServeHTTP(rw, req, recordDetail(req, config.Global()))
+	// return nil
 }
 
 func (p *ReverseProxy) ServeHTTPForCache(rw http.ResponseWriter, req *http.Request) *http.Response {
-	resp := p.WrappedServeHTTP(rw, req, true)
-
-	nopCloseResponseBody(resp)
-
-	return resp
+	return p.WrappedServeHTTP(rw, req, true)
 }
 
 func (p *ReverseProxy) CheckHardTimeoutEnforced(spec *APISpec, req *http.Request) (bool, int) {
@@ -449,10 +438,6 @@ func httpTransport(timeOut int, rw http.ResponseWriter, req *http.Request, p *Re
 		transport.TLSClientConfig.InsecureSkipVerify = true
 	}
 
-	if p.TykAPISpec.Proxy.Transport.SSLInsecureSkipVerify {
-		transport.TLSClientConfig.InsecureSkipVerify = true
-	}
-
 	// When request routed through the proxy `DialTLS` is not used, and only VerifyPeerCertificate is supported
 	// The reason behind two separate checks is that `DialTLS` supports specifying public keys per hostname, and `VerifyPeerCertificate` only global ones, e.g. `*`
 	if proxyURL, _ := transport.Proxy(req); proxyURL != nil {
@@ -477,10 +462,6 @@ func httpTransport(timeOut int, rw http.ResponseWriter, req *http.Request, p *Re
 		transport.TLSClientConfig.CipherSuites = getCipherAliases(p.TykAPISpec.Proxy.Transport.SSLCipherSuites)
 	}
 
-	if !config.Global().ProxySSLDisableRenegotiation {
-		transport.TLSClientConfig.Renegotiation = tls.RenegotiateFreelyAsClient
-	}
-
 	// Use the default unless we've modified the timout
 	if timeOut > 0 {
 		log.Debug("Setting timeout for outbound request to: ", timeOut)
@@ -503,6 +484,7 @@ func httpTransport(timeOut int, rw http.ResponseWriter, req *http.Request, p *Re
 
 func (p *ReverseProxy) WrappedServeHTTP(rw http.ResponseWriter, req *http.Request, withCache bool) *http.Response {
 	outReqIsWebsocket := IsWebsocket(req)
+
 	var roundTripper http.RoundTripper
 
 	p.TykAPISpec.Lock()
@@ -640,9 +622,9 @@ func (p *ReverseProxy) WrappedServeHTTP(rw http.ResponseWriter, req *http.Reques
 	var res *http.Response
 	var err error
 	if breakerEnforced {
+		log.Debug("ON REQUEST: Breaker status: ", breakerConf.CB.Ready())
 		if !breakerConf.CB.Ready() {
-			log.Debug("ON REQUEST: Circuit Breaker is in OPEN state")
-			p.ErrorHandler.HandleError(rw, logreq, "Service temporarily unavailable.", 503)
+			p.ErrorHandler.HandleError(rw, logreq, "Service temporarily unnavailable.", 503)
 			return nil
 		}
 		log.Debug("ON REQUEST: Circuit Breaker is in CLOSED or HALF-OPEN state")
@@ -676,7 +658,7 @@ func (p *ReverseProxy) WrappedServeHTTP(rw http.ResponseWriter, req *http.Reques
 		}).Error("http: proxy error: ", err)
 
 		if strings.Contains(err.Error(), "timeout awaiting response headers") {
-			p.ErrorHandler.HandleError(rw, logreq, "Upstream service reached hard timeout.", http.StatusGatewayTimeout)
+			p.ErrorHandler.HandleError(rw, logreq, "Upstream service reached hard timeout.", 408)
 
 			if p.TykAPISpec.Proxy.ServiceDiscovery.UseDiscoveryService {
 				if ServiceCache != nil {
@@ -686,12 +668,6 @@ func (p *ReverseProxy) WrappedServeHTTP(rw http.ResponseWriter, req *http.Reques
 			}
 			return nil
 		}
-
-		if strings.Contains(err.Error(), "context canceled") {
-			p.ErrorHandler.HandleError(rw, logreq, "Client closed request", 499)
-			return nil
-		}
-
 		if strings.Contains(err.Error(), "no such host") {
 			p.ErrorHandler.HandleError(rw, logreq, "Upstream host lookup failed", http.StatusInternalServerError)
 			return nil
@@ -878,74 +854,39 @@ func requestIPHops(r *http.Request) string {
 	return clientIP
 }
 
-// nopCloser is just like ioutil's, but here to let us re-read the same
-// buffer inside by moving position to the start every time we done with reading
+// nopCloser is just like ioutil's, but here to let us fetch the
+// underlying io.Reader.
 type nopCloser struct {
-	io.ReadSeeker
+	io.Reader
 }
 
-// Read just a wrapper around real Read which also moves position to the start if we get EOF
-// to have it ready for next read-cycle
-func (n nopCloser) Read(p []byte) (int, error) {
-	num, err := n.ReadSeeker.Read(p)
-	if err == io.EOF { // move to start to have it ready for next read cycle
-		n.Seek(0, io.SeekStart)
-	}
-	return num, err
-}
+func (nopCloser) Close() error { return nil }
 
-// Close is a no-op Close
-func (n nopCloser) Close() error {
-	return nil
-}
-
-func copyBody(body io.ReadCloser) io.ReadCloser {
-	// check if body was already read and converted into our nopCloser
+func copyBody(body io.ReadCloser) (b1, b2 io.ReadCloser) {
 	if nc, ok := body.(nopCloser); ok {
-		// seek to the beginning to have it ready for next read
-		nc.Seek(0, io.SeekStart)
-		return body
+		buf := *(nc.Reader.(*bytes.Buffer))
+		return body, nopCloser{&buf}
 	}
-
-	// body is http's io.ReadCloser - let's close it after we read data
 	defer body.Close()
 
-	// body is http's io.ReadCloser - read it up until EOF
-	var bodyRead bytes.Buffer
-	io.Copy(&bodyRead, body)
-
-	// use seek-able reader for further body usage
-	reusableBody := bytes.NewReader(bodyRead.Bytes())
-
-	return nopCloser{reusableBody}
+	var buf1, buf2 bytes.Buffer
+	io.Copy(&buf1, body)
+	buf2 = buf1
+	return nopCloser{&buf1}, nopCloser{&buf2}
 }
 
 func copyRequest(r *http.Request) *http.Request {
+	r2 := *r
 	if r.Body != nil {
-		r.Body = copyBody(r.Body)
+		r.Body, r2.Body = copyBody(r.Body)
 	}
-	return r
+	return &r2
 }
 
 func copyResponse(r *http.Response) *http.Response {
+	r2 := *r
 	if r.Body != nil {
-		r.Body = copyBody(r.Body)
+		r.Body, r2.Body = copyBody(r.Body)
 	}
-	return r
-}
-
-func nopCloseRequestBody(r *http.Request) {
-	if r == nil {
-		return
-	}
-
-	copyRequest(r)
-}
-
-func nopCloseResponseBody(r *http.Response) {
-	if r == nil {
-		return
-	}
-
-	copyResponse(r)
+	return &r2
 }
