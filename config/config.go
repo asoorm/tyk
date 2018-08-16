@@ -296,7 +296,7 @@ type Config struct {
 	RegexpCacheExpire                 int32                                 `json:"regexp_cache_expire"`
 	HealthCheckEndpointName           string                                `json:"health_check_endpoint_name"`
 	EnableServerless                  bool                                  `json:"enable_serverless"`
-	ServerlessProviderConfigs         map[string]string                     `json:"serverless_provider_configs"`
+	ServerlessProviderConfigs         map[string]interface{}                `json:"serverless_provider_configs"`
 }
 
 type CertData struct {

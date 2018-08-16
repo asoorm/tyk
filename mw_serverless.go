@@ -7,13 +7,18 @@ import (
 	"github.com/asoorm/serverless/provider"
 	"github.com/asoorm/serverless/provider/aws"
 	"github.com/asoorm/serverless/provider/azure"
+	"github.com/mitchellh/mapstructure"
 	"github.com/pkg/errors"
+
+	"github.com/TykTechnologies/tyk/config"
 
 	"github.com/TykTechnologies/tyk/apidef"
 )
 
 type Serverless struct {
 	BaseMiddleware
+	ServerlessConfigs map[string]interface{}
+	Configs           map[string]provider.Conf
 }
 
 func (k *Serverless) Name() string {
@@ -27,6 +32,29 @@ func (k *Serverless) EnabledForSpec() bool {
 
 	for _, v := range k.Spec.VersionData.Versions {
 		if len(v.ExtendedPaths.Serverless) > 0 {
+
+			k.ServerlessConfigs = config.Global().ServerlessProviderConfigs
+
+			k.Configs = make(map[string]provider.Conf, len(config.Global().ServerlessProviderConfigs))
+
+			for key, value := range config.Global().ServerlessProviderConfigs {
+				switch key {
+				case "aws-lambda":
+					var cfg aws.Conf
+					err := mapstructure.Decode(value, &cfg)
+					if err != nil {
+						return false
+					}
+					k.Configs[key] = cfg
+				case "azure-functions":
+					var cfg azure.Conf
+					err := mapstructure.Decode(value, &cfg)
+					if err != nil {
+						return false
+					}
+					k.Configs[key] = cfg
+				}
+			}
 			return true
 		}
 	}
@@ -50,15 +78,33 @@ func (k *Serverless) ProcessRequest(w http.ResponseWriter, r *http.Request, _ in
 	var err error
 	switch vPathMeta.Provider {
 	case "aws-lambda":
-		p, err = aws.NewProvider()
-		c = aws.Conf{
-			Region: vPathMeta.ProviderConfig["Region"].(string),
+		awsConfMap, ok := k.ServerlessConfigs[vPathMeta.Provider]
+		if !ok {
+			return errors.New("missing lambda configs"), http.StatusInternalServerError
 		}
-		break
+		awsConf := aws.Conf{}
+
+		err := mapstructure.Decode(awsConfMap, &awsConf)
+		if err != nil {
+			return errors.New("unable to decode configs"), http.StatusInternalServerError
+		}
+
+		log.Printf("awsConf: %#v\n", awsConf)
+
+		p, err = aws.NewProvider()
+		if err != nil {
+			return errors.New("unable to create provider"), http.StatusInternalServerError
+		}
+
+		if pathRegion, ok := vPathMeta.ProviderConfig["Region"].(string); ok {
+			log.Warn("overriding region")
+			awsConf.Region = pathRegion
+		}
+
+		c = awsConf
 	case "azure-functions":
 		p, err = azure.NewProvider()
 		c = azure.Conf{}
-		break
 	default:
 		log.Errorf("serverless misconfigured, unknown provider %s", vPathMeta.Provider)
 		return errors.New("unknown provider"), http.StatusInternalServerError
