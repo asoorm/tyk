@@ -191,6 +191,12 @@ func (k *OpenIDMW) ProcessRequest(w http.ResponseWriter, r *http.Request, _ inte
 		k.Logger().WithError(err).Error("Could not apply new policy from OIDC client to session")
 		return errors.New("Key not authorized: could not apply new policy"), http.StatusForbidden
 	}
+	// apply new policy to session if any and update session
+	session.SetPolicies(policyID)
+	if err := k.ApplyPolicies(sessionID, &session); err != nil {
+		k.Logger().WithError(err).Error("Could not apply new policy from OIDC client to session")
+		return errors.New("Key not authorized: could not apply new policy"), http.StatusForbidden
+	}
 
 	// 4. Set session state on context, we will need it later
 	switch k.Spec.BaseIdentityProvidedBy {
