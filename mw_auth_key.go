@@ -1,9 +1,13 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/TykTechnologies/tyk/apidef"
 	"github.com/TykTechnologies/tyk/certs"
@@ -97,6 +101,46 @@ func (k *AuthKey) ProcessRequest(w http.ResponseWriter, r *http.Request, _ inter
 		return errors.New("Access to this API has been disallowed"), http.StatusForbidden
 	}
 
+	signatureAttempt := r.Header.Get("X-Signature")
+	if signatureAttempt == "" {
+		return errors.New("signature is not set"), http.StatusUnauthorized
+	}
+
+	sharedSecretIf, ok := session.MetaData["secret"]
+	if !ok {
+		return errors.New("key metadata config error, shared secret not set"), http.StatusUnauthorized
+	}
+
+	sharedSecret, ok := sharedSecretIf.(string)
+	if !ok {
+		return errors.New("key metadata config error, shared secret not string"), http.StatusUnauthorized
+	}
+
+	now := time.Now().Unix()
+	attempts := 0
+	found := false
+	for i := int64(0); i <= 300; i++ {
+		attempts++
+		if hex.EncodeToString(sha256Sum(key, sharedSecret, now+i)) == signatureAttempt {
+			found = true
+			break
+		}
+
+		if i == int64(0) {
+			continue
+		}
+
+		attempts++
+		if hex.EncodeToString(sha256Sum(key, sharedSecret, now-i)) == signatureAttempt {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return errors.New("signature is not valid"), http.StatusUnauthorized
+	}
+
 	// Set session state on context, we will need it later
 	switch k.Spec.BaseIdentityProvidedBy {
 	case apidef.AuthToken, apidef.UnsetAuth:
@@ -105,6 +149,12 @@ func (k *AuthKey) ProcessRequest(w http.ResponseWriter, r *http.Request, _ inter
 	}
 
 	return nil, http.StatusOK
+}
+
+func sha256Sum(token string, sharedSecret string, timeStamp int64) []byte {
+	signature := sha256.Sum256([]byte(token + sharedSecret + strconv.FormatInt(timeStamp, 10)))
+
+	return signature[:]
 }
 
 func stripBearer(token string) string {
