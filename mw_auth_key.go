@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -116,12 +117,14 @@ func (k *AuthKey) ProcessRequest(w http.ResponseWriter, r *http.Request, _ inter
 		return errors.New("key metadata config error, shared secret not string"), http.StatusUnauthorized
 	}
 
+	signatureAttemptHex, _ := hex.DecodeString(signatureAttempt)
+
 	now := time.Now().Unix()
 	attempts := 0
 	found := false
 	for i := int64(0); i <= 300; i++ {
 		attempts++
-		if hex.EncodeToString(sha256Sum(key, sharedSecret, now+i)) == signatureAttempt {
+		if bytes.Equal(sha256Sum(key, sharedSecret, now+i), signatureAttemptHex) {
 			found = true
 			break
 		}
@@ -131,7 +134,7 @@ func (k *AuthKey) ProcessRequest(w http.ResponseWriter, r *http.Request, _ inter
 		}
 
 		attempts++
-		if hex.EncodeToString(sha256Sum(key, sharedSecret, now-i)) == signatureAttempt {
+		if bytes.Equal(sha256Sum(key, sharedSecret, now-i), signatureAttemptHex) {
 			found = true
 			break
 		}
