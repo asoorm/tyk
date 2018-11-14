@@ -177,38 +177,49 @@ func urlRewrite(meta *apidef.URLRewriteMeta, r *http.Request) (string, error) {
 func replaceTykVariables(r *http.Request, in string, escape bool) string {
 	if strings.Contains(in, contextLabel) {
 		contextData := ctxGetData(r)
-		vars := contextMatch.FindAllString(in, -1)
-		in = replaceVariables(in, vars, contextData, contextLabel, escape)
+
+		replaceGroups := contextMatch.FindAllStringSubmatch(in, -1)
+		for _, v := range replaceGroups {
+			contextKey := strings.Replace(v[0], contextLabel, "", 1)
+
+			if val, ok := contextData[contextKey]; ok {
+				valStr := valToStr(val)
+				// If contains url with domain
+				if escape && !strings.HasPrefix(valStr, "http") {
+					valStr = url.QueryEscape(valStr)
+				}
+				in = strings.Replace(in, v[0], valStr, -1)
+			} else {
+				in = ""
+			}
+		}
 	}
 
 	if strings.Contains(in, metaLabel) {
-		vars := metaMatch.FindAllString(in, -1)
+		// Meta data from the token
 		session := ctxGetSession(r)
 		if session == nil {
-			in = replaceVariables(in, vars, nil, metaLabel, escape)
-		} else {
-			in = replaceVariables(in, vars, session.MetaData, metaLabel, escape)
+			return in
 		}
-	}
 
-	return in
-}
+		replaceGroups := metaMatch.FindAllStringSubmatch(in, -1)
+		for _, v := range replaceGroups {
+			contextKey := strings.Replace(v[0], metaLabel, "", 1)
 
-func replaceVariables(in string, vars []string, vals map[string]interface{}, label string, escape bool) string {
-	for _, v := range vars {
-		key := strings.Replace(v, label, "", 1)
-		val, ok := vals[key]
-		if ok {
-			valStr := valToStr(val)
-			// If contains url with domain
-			if escape && !strings.HasPrefix(valStr, "http") {
-				valStr = url.QueryEscape(valStr)
+			val, ok := session.MetaData[contextKey]
+			if ok {
+				valStr := valToStr(val)
+				// If contains url with domain
+				if escape && !strings.HasPrefix(valStr, "http") {
+					valStr = url.QueryEscape(valStr)
+				}
+				in = strings.Replace(in, v[0], valStr, -1)
+			} else {
+				in = ""
 			}
-			in = strings.Replace(in, v, valStr, -1)
-		} else {
-			in = strings.Replace(in, v, "", -1)
 		}
 	}
+
 	return in
 }
 
@@ -234,14 +245,6 @@ func valToStr(v interface{}) string {
 			}
 			i++
 		}
-	case []interface{}:
-		tmpSlice := make([]string, 0, len(x))
-		for _, val := range x {
-			if rec := valToStr(val); rec != "" {
-				tmpSlice = append(tmpSlice, url.QueryEscape(rec))
-			}
-		}
-		s = strings.Join(tmpSlice, ",")
 	default:
 		log.Error("Context variable type is not supported: ", reflect.TypeOf(v))
 	}
@@ -308,31 +311,19 @@ func (m *URLRewriteMiddleware) EnabledForSpec() bool {
 func (m *URLRewriteMiddleware) CheckHostRewrite(oldPath, newTarget string, r *http.Request) {
 	oldAsURL, _ := url.Parse(oldPath)
 	newAsURL, _ := url.Parse(newTarget)
-	if newAsURL.Scheme != LoopScheme && oldAsURL.Host != newAsURL.Host {
+	if oldAsURL.Host != newAsURL.Host {
 		log.Debug("Detected a host rewrite in pattern!")
 		setCtxValue(r, RetainHost, true)
 	}
-}
-
-const LoopScheme = "tyk"
-
-var NonAlphaNumRE = regexp.MustCompile("[^A-Za-z0-9]+")
-var LoopHostRE = regexp.MustCompile("tyk://([^/]+)")
-
-func replaceNonAlphaNumeric(in string) string {
-	return NonAlphaNumRE.ReplaceAllString(in, "-")
 }
 
 // ProcessRequest will run any checks on the request on the way through the system, return an error to have the chain fail
 func (m *URLRewriteMiddleware) ProcessRequest(w http.ResponseWriter, r *http.Request, _ interface{}) (error, int) {
 	_, versionPaths, _, _ := m.Spec.Version(r)
 	found, meta := m.Spec.CheckSpecMatchesStatus(r, versionPaths, URLRewrite)
-
 	if !found {
 		return nil, http.StatusOK
 	}
-
-	ctxSetOrigRequestURL(r, r.URL)
 
 	log.Debug("Rewriter active")
 	umeta := meta.(*apidef.URLRewriteMeta)
@@ -342,15 +333,6 @@ func (m *URLRewriteMiddleware) ProcessRequest(w http.ResponseWriter, r *http.Req
 	if err != nil {
 		log.Error(err)
 		return err, http.StatusInternalServerError
-	}
-
-	// During looping target can be API name
-	// Need make it compatible with URL parser
-	if strings.HasPrefix(p, LoopScheme) {
-		p = LoopHostRE.ReplaceAllStringFunc(p, func(match string) string {
-			host := strings.TrimPrefix(match, LoopScheme+"://")
-			return LoopScheme + "://" + replaceNonAlphaNumeric(host)
-		})
 	}
 
 	m.CheckHostRewrite(oldPath, p, r)
@@ -480,7 +462,8 @@ func checkSessionTrigger(r *http.Request, sess *user.SessionState, options map[s
 
 func checkPayload(r *http.Request, options apidef.StringRegexMap, triggernum int) bool {
 	contextData := ctxGetData(r)
-	bodyBytes, _ := ioutil.ReadAll(r.Body)
+	cp := copyRequest(r)
+	bodyBytes, _ := ioutil.ReadAll(cp.Body)
 
 	matches := options.FindAllStringSubmatch(string(bodyBytes), -1)
 
