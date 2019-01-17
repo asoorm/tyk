@@ -17,7 +17,6 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/Sirupsen/logrus"
 	"github.com/rubyist/circuitbreaker"
 
 	"github.com/TykTechnologies/gojsonschema"
@@ -58,7 +57,6 @@ const (
 	RequestTracked
 	RequestNotTracked
 	ValidateJSONRequest
-	Internal
 )
 
 // RequestStatus is a custom type to avoid collisions
@@ -90,7 +88,6 @@ const (
 	StatusRequesTracked            RequestStatus = "Request Tracked"
 	StatusRequestNotTracked        RequestStatus = "Request Not Tracked"
 	StatusValidateJSON             RequestStatus = "Validate JSON"
-	StatusInternal                 RequestStatus = "Internal path"
 )
 
 // URLSpec represents a flattened specification for URLs, used to check if a proxy URL
@@ -115,7 +112,6 @@ type URLSpec struct {
 	TrackEndpoint             apidef.TrackEndpointMeta
 	DoNotTrackEndpoint        apidef.TrackEndpointMeta
 	ValidatePathMeta          apidef.ValidatePathMeta
-	Internal                  apidef.InternalMeta
 }
 
 type TransformSpec struct {
@@ -132,7 +128,7 @@ type ExtendedCircuitBreakerMeta struct {
 // flattened URL list is checked for matching paths and then it's status evaluated if found.
 type APISpec struct {
 	*apidef.APIDefinition
-	sync.RWMutex
+	sync.Mutex
 
 	RxPaths                  map[string][]URLSpec
 	WhiteListEnabled         map[string]bool
@@ -157,9 +153,6 @@ type APISpec struct {
 	WSTransport              http.RoundTripper
 	WSTransportCreated       time.Time
 	GlobalConfig             config.Config
-	OrgHasNoSession          bool
-
-	middlewareChain *ChainObject
 }
 
 // APIDefinitionLoader will load an Api definition from a storage
@@ -171,12 +164,8 @@ var ServiceNonce string
 
 // MakeSpec will generate a flattened URLSpec from and APIDefinitions' VersionInfo data. paths are
 // keyed to the Api version name, which is determined during routing to speed up lookups
-func (a APIDefinitionLoader) MakeSpec(def *apidef.APIDefinition, logger *logrus.Entry) *APISpec {
+func (a APIDefinitionLoader) MakeSpec(def *apidef.APIDefinition) *APISpec {
 	spec := &APISpec{}
-
-	if logger == nil {
-		logger = logrus.NewEntry(log)
-	}
 
 	// parse version expiration time stamps
 	for key, ver := range def.VersionData.Versions {
@@ -185,7 +174,7 @@ func (a APIDefinitionLoader) MakeSpec(def *apidef.APIDefinition, logger *logrus.
 		}
 		// calculate the time
 		if t, err := time.Parse("2006-01-02 15:04", ver.Expires); err != nil {
-			logger.WithError(err).WithField("Expires", ver.Expires).Error("Could not parse expiry date for API")
+			log.WithError(err).WithField("Expires", ver.Expires).Error("Could not parse expiry date for API")
 		} else {
 			ver.ExpiresTs = t
 			def.VersionData.Versions[key] = ver
@@ -209,24 +198,22 @@ func (a APIDefinitionLoader) MakeSpec(def *apidef.APIDefinition, logger *logrus.
 
 	// Create and init the virtual Machine
 	if config.Global().EnableJSVM {
-		spec.JSVM.Init(spec, logger)
+		spec.JSVM.Init(spec)
 	}
 
 	// Set up Event Handlers
-	if len(def.EventHandlers.Events) > 0 {
-		logger.Debug("Initializing event handlers")
-	}
+	log.Debug("INITIALISING EVENT HANDLERS")
 	spec.EventPaths = make(map[apidef.TykEvent][]config.TykEventHandler)
 	for eventName, eventHandlerConfs := range def.EventHandlers.Events {
-		logger.Debug("FOUND EVENTS TO INIT")
+		log.Debug("FOUND EVENTS TO INIT")
 		for _, handlerConf := range eventHandlerConfs {
-			logger.Debug("CREATING EVENT HANDLERS")
+			log.Debug("CREATING EVENT HANDLERS")
 			eventHandlerInstance, err := EventHandlerByName(handlerConf, spec)
 
 			if err != nil {
-				logger.Error("Failed to init event handler: ", err)
+				log.Error("Failed to init event handler: ", err)
 			} else {
-				logger.Debug("Init Event Handler: ", eventName)
+				log.Debug("Init Event Handler: ", eventName)
 				spec.EventPaths[eventName] = append(spec.EventPaths[eventName], eventHandlerInstance)
 			}
 
@@ -244,7 +231,7 @@ func (a APIDefinitionLoader) MakeSpec(def *apidef.APIDefinition, logger *logrus.
 			pathSpecs, whiteListSpecs = a.getExtendedPathSpecs(v, spec)
 
 		} else {
-			logger.Warning("Legacy path detected! Upgrade to extended.")
+			log.Warning("Legacy path detected! Upgrade to extended.")
 			pathSpecs, whiteListSpecs = a.getPathSpecs(v)
 		}
 		spec.RxPaths[v.Name] = pathSpecs
@@ -331,7 +318,7 @@ func (a APIDefinitionLoader) FromDashboardService(endpoint, secret string) ([]*A
 	// Process
 	var specs []*APISpec
 	for _, def := range apiDefs {
-		spec := a.MakeSpec(def, nil)
+		spec := a.MakeSpec(def)
 		specs = append(specs, spec)
 	}
 
@@ -394,7 +381,7 @@ func (a APIDefinitionLoader) processRPCDefinitions(apiCollection string) ([]*API
 			def.Proxy.ListenPath = newListenPath
 		}
 
-		spec := a.MakeSpec(def, nil)
+		spec := a.MakeSpec(def)
 		specs = append(specs, spec)
 	}
 
@@ -424,7 +411,7 @@ func (a APIDefinitionLoader) FromDir(dir string) []*APISpec {
 		}
 		def := a.ParseDefinition(f)
 		f.Close()
-		spec := a.MakeSpec(def, nil)
+		spec := a.MakeSpec(def)
 		specs = append(specs, spec)
 	}
 	return specs
@@ -654,7 +641,7 @@ func (a APIDefinitionLoader) compileCircuitBreakerPathSpec(paths []apidef.Circui
 			for e := range events {
 				switch e {
 				case circuit.BreakerTripped:
-					log.Warning("[PROXY] [CIRCUIT BREAKER] Breaker tripped for path: ", path)
+					log.Warning("[PROXY] [CIRCUIT BREKER] Breaker tripped for path: ", path)
 					log.Debug("Breaker tripped: ", e)
 					// Start a timer function
 
@@ -671,7 +658,7 @@ func (a APIDefinitionLoader) compileCircuitBreakerPathSpec(paths []apidef.Circui
 
 					if spec.Proxy.ServiceDiscovery.UseDiscoveryService {
 						if ServiceCache != nil {
-							log.Warning("[PROXY] [CIRCUIT BREAKER] Refreshing host list")
+							log.Warning("[PROXY] [CIRCUIT BREKER] Refreshing host list")
 							ServiceCache.Delete(spec.APIID)
 						}
 					}
@@ -792,20 +779,6 @@ func (a APIDefinitionLoader) compileUnTrackedEndpointPathspathSpec(paths []apide
 	return urlSpec
 }
 
-func (a APIDefinitionLoader) compileInternalPathspathSpec(paths []apidef.InternalMeta, stat URLStatus) []URLSpec {
-	urlSpec := []URLSpec{}
-
-	for _, stringSpec := range paths {
-		newSpec := URLSpec{}
-		a.generateRegex(stringSpec.Path, &newSpec, stat)
-		// Extend with method actions
-		newSpec.Internal = stringSpec
-		urlSpec = append(urlSpec, newSpec)
-	}
-
-	return urlSpec
-}
-
 func (a APIDefinitionLoader) getExtendedPathSpecs(apiVersionDef apidef.VersionInfo, apiSpec *APISpec) ([]URLSpec, bool) {
 	// TODO: New compiler here, needs to put data into a different structure
 
@@ -828,7 +801,6 @@ func (a APIDefinitionLoader) getExtendedPathSpecs(apiVersionDef apidef.VersionIn
 	trackedPaths := a.compileTrackedEndpointPathspathSpec(apiVersionDef.ExtendedPaths.TrackEndpoints, RequestTracked)
 	unTrackedPaths := a.compileUnTrackedEndpointPathspathSpec(apiVersionDef.ExtendedPaths.DoNotTrackEndpoints, RequestNotTracked)
 	validateJSON := a.compileValidateJSONPathspathSpec(apiVersionDef.ExtendedPaths.ValidateJSON, ValidateJSONRequest)
-	internalPaths := a.compileInternalPathspathSpec(apiVersionDef.ExtendedPaths.Internal, Internal)
 
 	combinedPath := []URLSpec{}
 	combinedPath = append(combinedPath, ignoredPaths...)
@@ -850,7 +822,6 @@ func (a APIDefinitionLoader) getExtendedPathSpecs(apiVersionDef apidef.VersionIn
 	combinedPath = append(combinedPath, trackedPaths...)
 	combinedPath = append(combinedPath, unTrackedPaths...)
 	combinedPath = append(combinedPath, validateJSON...)
-	combinedPath = append(combinedPath, internalPaths...)
 
 	return combinedPath, len(whiteListPaths) > 0
 }
@@ -860,11 +831,6 @@ func (a *APISpec) Init(authStore, sessionStore, healthStore, orgStore storage.Ha
 	a.SessionManager.Init(sessionStore)
 	a.Health.Init(healthStore)
 	a.OrgSessionManager.Init(orgStore)
-}
-
-func (a *APISpec) StopSessionManagerPool() {
-	a.SessionManager.Stop()
-	a.OrgSessionManager.Stop()
 }
 
 func (a *APISpec) getURLStatus(stat URLStatus) RequestStatus {
@@ -907,8 +873,6 @@ func (a *APISpec) getURLStatus(stat URLStatus) RequestStatus {
 		return StatusRequestNotTracked
 	case ValidateJSONRequest:
 		return StatusValidateJSON
-	case Internal:
-		return StatusInternal
 
 	default:
 		log.Error("URL Status was not one of Ignored, Blacklist or WhiteList! Blocking.")
@@ -945,20 +909,12 @@ func (a *APISpec) URLAllowedAndIgnored(r *http.Request, rxPaths []URLSpec, white
 			}
 		}
 
-		if r.Method == v.Internal.Method && v.Status == Internal && !ctxLoopingEnabled(r) {
-			return EndPointNotAllowed, nil
-		}
-
 		if whiteListStatus {
 			// We have a whitelist, nothing gets through unless specifically defined
 			switch v.Status {
 			case WhiteList, BlackList, Ignored:
 			default:
-				if v.Status == Internal && r.Method == v.Internal.Method && ctxLoopingEnabled(r) {
-					return a.getURLStatus(v.Status), nil
-				} else {
-					return EndPointNotAllowed, nil
-				}
+				return EndPointNotAllowed, nil
 			}
 		}
 
@@ -991,54 +947,68 @@ func (a *APISpec) URLAllowedAndIgnored(r *http.Request, rxPaths []URLSpec, white
 
 // CheckSpecMatchesStatus checks if a url spec has a specific status
 func (a *APISpec) CheckSpecMatchesStatus(r *http.Request, rxPaths []URLSpec, mode URLStatus) (bool, interface{}) {
-	matchPath := ctxGetUrlRewritePath(r)
-	method := ctxGetRequestMethod(r)
-	if matchPath == "" {
-		matchPath = r.URL.Path
+	matchPath := r.URL.Path
+	if origURL := ctxGetOrigRequestURL(r); origURL != nil {
+		matchPath = origURL.Path
 	}
-
-	if a.Proxy.ListenPath != "/" {
-		matchPath = strings.TrimPrefix(matchPath, a.Proxy.ListenPath)
-	}
-
 	if !strings.HasPrefix(matchPath, "/") {
 		matchPath = "/" + matchPath
 	}
 
-	// Check if ignored
-	for _, v := range rxPaths {
+    for _, v := range rxPaths {
 		if mode != v.Status {
 			continue
 		}
-		if !v.Spec.MatchString(matchPath) {
-			continue
+
+		match := v.Spec.MatchString(matchPath)
+
+		// only return it it's what we are looking for
+		if !match {
+			// check for special case when using url_rewrites with transform_response
+			// and specifying the same "path" expression
+
+			if mode == TransformedResponse {
+				if v.TransformResponseAction.Path != ctxGetUrlRewritePath(r) {
+					continue
+				}
+			} else if mode == HeaderInjectedResponse {
+				if v.InjectHeadersResponse.Path != ctxGetUrlRewritePath(r) {
+					continue
+				}
+			} else if mode == TransformedJQResponse {
+				if v.TransformJQResponseAction.Path != ctxGetUrlRewritePath(r) {
+					continue
+				}
+			} else {
+				continue
+			}
 		}
 
 		switch v.Status {
 		case Ignored, BlackList, WhiteList, Cached:
 			return true, nil
 		case Transformed:
-			if method == v.TransformAction.Method {
+			if r.Method == v.TransformAction.Method {
 				return true, &v.TransformAction
 			}
 		case TransformedJQ:
-			if method == v.TransformJQAction.Method {
+			if r.Method == v.TransformJQAction.Method {
 				return true, &v.TransformJQAction
 			}
 		case HeaderInjected:
-			if method == v.InjectHeaders.Method {
+			if r.Method == v.InjectHeaders.Method {
 				return true, &v.InjectHeaders
 			}
 		case HeaderInjectedResponse:
-			if method == v.InjectHeadersResponse.Method {
+			if r.Method == v.InjectHeadersResponse.Method {
 				return true, &v.InjectHeadersResponse
 			}
 		case TransformedResponse:
-			if method == v.TransformResponseAction.Method {
+			if r.Method == v.TransformResponseAction.Method {
 				return true, &v.TransformResponseAction
 			}
 		case TransformedJQResponse:
-			if method == v.TransformJQResponseAction.Method {
+			if r.Method == v.TransformJQResponseAction.Method {
 				return true, &v.TransformJQResponseAction
 			}
 		case HardTimeout:
@@ -1046,40 +1016,36 @@ func (a *APISpec) CheckSpecMatchesStatus(r *http.Request, rxPaths []URLSpec, mod
 				return true, &v.HardTimeout.TimeOut
 			}
 		case CircuitBreaker:
-			if method == v.CircuitBreaker.Method {
+			if r.Method == v.CircuitBreaker.Method {
 				return true, &v.CircuitBreaker
 			}
 		case URLRewrite:
-			if method == v.URLRewrite.Method {
+			if r.Method == v.URLRewrite.Method {
 				return true, v.URLRewrite
 			}
 		case VirtualPath:
-			if method == v.VirtualPathSpec.Method {
+			if r.Method == v.VirtualPathSpec.Method {
 				return true, &v.VirtualPathSpec
 			}
 		case RequestSizeLimit:
-			if method == v.RequestSize.Method {
+			if r.Method == v.RequestSize.Method {
 				return true, &v.RequestSize
 			}
 		case MethodTransformed:
-			if method == v.MethodTransform.Method {
+			if r.Method == v.MethodTransform.Method {
 				return true, &v.MethodTransform
 			}
 		case RequestTracked:
-			if method == v.TrackEndpoint.Method {
+			if r.Method == v.TrackEndpoint.Method {
 				return true, &v.TrackEndpoint
 			}
 		case RequestNotTracked:
-			if method == v.DoNotTrackEndpoint.Method {
+			if r.Method == v.DoNotTrackEndpoint.Method {
 				return true, &v.DoNotTrackEndpoint
 			}
 		case ValidateJSONRequest:
-			if method == v.ValidatePathMeta.Method {
+			if r.Method == v.ValidatePathMeta.Method {
 				return true, &v.ValidatePathMeta
-			}
-		case Internal:
-			if method == v.Internal.Method {
-				return true, &v.Internal
 			}
 		}
 	}
