@@ -37,22 +37,11 @@ const (
 	OrigRequestURL
 	LoopLevel
 	LoopLevelLimit
-	ThrottleLevel
-	ThrottleLevelLimit
 	Trace
-	CheckLoopLimits
 )
 
-var (
-	// key session memory cache
-	SessionCache = cache.New(10*time.Second, 5*time.Second)
-
-	// org session memory cache
-	ExpiryCache = cache.New(600*time.Second, 10*time.Minute)
-
-	// memory cache to store arbitrary items
-	UtilCache = cache.New(time.Hour, 10*time.Minute)
-)
+var SessionCache = cache.New(10*time.Second, 5*time.Second)
+var ExpiryCache = cache.New(600*time.Second, 10*time.Minute)
 
 type ReturningHttpHandler interface {
 	ServeHTTP(http.ResponseWriter, *http.Request) *http.Response
@@ -112,7 +101,7 @@ func estimateTagsCapacity(session *user.SessionState, apiSpec *APISpec) int {
 	return size
 }
 
-func (s *SuccessHandler) RecordHit(r *http.Request, timing int64, code int, responseCopy *http.Response) {
+func (s *SuccessHandler) RecordHit(r *http.Request, timing int64, code int, requestCopy *http.Request, responseCopy *http.Response) {
 
 	if s.Spec.DoNotTrack {
 		return
@@ -153,7 +142,7 @@ func (s *SuccessHandler) RecordHit(r *http.Request, timing int64, code int, resp
 		if recordDetail(r, s.Spec.GlobalConfig) {
 			// Get the wire format representation
 			var wireFormatReq bytes.Buffer
-			r.Write(&wireFormatReq)
+			requestCopy.Write(&wireFormatReq)
 			rawRequest = base64.StdEncoding.EncodeToString(wireFormatReq.Bytes())
 			// responseCopy, unlike requestCopy, can be nil
 			// here - if the response was cached in
@@ -280,6 +269,11 @@ func (s *SuccessHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) *http
 
 	addVersionHeader(w, r, s.Spec.GlobalConfig)
 
+	var copiedRequest *http.Request
+	if recordDetail(r, s.Spec.GlobalConfig) {
+		copiedRequest = copyRequest(r)
+	}
+
 	t1 := time.Now()
 	resp := s.Proxy.ServeHTTP(w, r)
 	t2 := time.Now()
@@ -288,7 +282,12 @@ func (s *SuccessHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) *http
 	log.Debug("Upstream request took (ms): ", millisec)
 
 	if resp != nil {
-		s.RecordHit(r, int64(millisec), resp.StatusCode, resp)
+		var copiedResponse *http.Response
+		if recordDetail(r, s.Spec.GlobalConfig) {
+			copiedResponse = copyResponse(resp)
+		}
+
+		s.RecordHit(r, int64(millisec), resp.StatusCode, copiedRequest, copiedResponse)
 	}
 	log.Debug("Done proxy")
 	return nil
@@ -315,17 +314,27 @@ func (s *SuccessHandler) ServeHTTPWithCache(w http.ResponseWriter, r *http.Reque
 		r.URL.RawPath = strings.Replace(r.URL.RawPath, s.Spec.Proxy.ListenPath, "", 1)
 	}
 
+	var copiedRequest *http.Request
+	if recordDetail(r, s.Spec.GlobalConfig) {
+		copiedRequest = copyRequest(r)
+	}
+
 	t1 := time.Now()
 	inRes := s.Proxy.ServeHTTPForCache(w, r)
 	t2 := time.Now()
 
 	addVersionHeader(w, r, s.Spec.GlobalConfig)
 
+	var copiedResponse *http.Response
+	if recordDetail(r, s.Spec.GlobalConfig) {
+		copiedResponse = copyResponse(inRes)
+	}
+
 	millisec := float64(t2.UnixNano()-t1.UnixNano()) * 0.000001
 	log.Debug("Upstream request took (ms): ", millisec)
 
 	if inRes != nil {
-		s.RecordHit(r, int64(millisec), inRes.StatusCode, inRes)
+		s.RecordHit(r, int64(millisec), inRes.StatusCode, copiedRequest, copiedResponse)
 	}
 
 	return inRes
