@@ -9,13 +9,12 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/Sirupsen/logrus"
 	"github.com/gorilla/mux"
 	"github.com/justinas/alice"
-	"github.com/pmylund/go-cache"
 
+	"github.com/TykTechnologies/playground/l4/logger"
 	"github.com/TykTechnologies/tyk/apidef"
 	"github.com/TykTechnologies/tyk/config"
 	"github.com/TykTechnologies/tyk/coprocess"
@@ -364,8 +363,8 @@ func processSpec(spec *APISpec, apisByListen map[string]int,
 			mainLog.WithField("api_name", spec.Name).Info("Checking security policy: OAuth")
 		}
 
-		if mwAppendEnabled(&authArray, &BasicAuthKeyIsValid{baseMid, cache.New(60*time.Second, 60*time.Minute), nil, nil}) {
-			mainLog.WithField("api_name", spec.Name).Info("Checking security policy: Basic")
+		if mwAppendEnabled(&authArray, &BasicAuthKeyIsValid{baseMid, nil, nil}) {
+			logger.Info("Checking security policy: Basic")
 		}
 
 		if mwAppendEnabled(&authArray, &HMACMiddleware{BaseMiddleware: baseMid}) {
