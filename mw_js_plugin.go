@@ -2,10 +2,13 @@ package main
 
 import (
 	"bytes"
+	"crypto/md5"
+	"crypto/sha256"
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -590,6 +593,31 @@ func (j *JSVM) LoadTykJSApi() {
 		}
 
 		return returnVal
+	})
+
+	j.VM.Set("TykHash", func(call otto.FunctionCall) otto.Value {
+		mode := call.Argument(0).String()
+		plain := []byte(call.Argument(1).String())
+
+		var hashed otto.Value
+		var err error
+		switch mode {
+		case "sha256":
+			hashedArr := sha256.Sum256(plain)
+			hashed, err = j.VM.ToValue(string(hashedArr[:]))
+
+		case "md5":
+			md5Arr := md5.Sum(plain)
+			hashed, err = j.VM.ToValue(string(md5Arr[:]))
+		default:
+			err = errors.New(fmt.Sprintf("unknown hashing algorithm (%s)", mode))
+		}
+		if err != nil {
+			j.Log.WithError(err).Errorf("Failed to %s hash %s", mode, plain)
+			return otto.Value{}
+		}
+
+		return hashed
 	})
 
 	j.VM.Run(`function TykJsResponse(response, session_meta) {
