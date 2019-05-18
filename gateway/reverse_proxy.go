@@ -279,7 +279,7 @@ func TykNewSingleHostReverseProxy(target *url.URL, spec *APISpec) *ReverseProxy 
 		TykAPISpec:    spec,
 		FlushInterval: time.Duration(spec.GlobalConfig.HttpServerOptions.FlushInterval) * time.Millisecond,
 	}
-	proxy.ErrorHandler.BaseMiddleware = BaseMiddleware{Spec: spec, Proxy: proxy}
+	proxy.ResponseHandler.BaseMiddleware = BaseMiddleware{Spec: spec, Proxy: proxy}
 	return proxy
 }
 
@@ -307,8 +307,8 @@ type ReverseProxy struct {
 	// If nil, the default configuration is used.
 	TLSClientConfig *tls.Config
 
-	TykAPISpec   *APISpec
-	ErrorHandler ErrorHandler
+	TykAPISpec      *APISpec
+	ResponseHandler ResponseHandler
 }
 
 func defaultTransport(dialerTimeout float64) *http.Transport {
@@ -665,7 +665,7 @@ func (p *ReverseProxy) WrappedServeHTTP(rw http.ResponseWriter, req *http.Reques
 	if breakerEnforced {
 		if !breakerConf.CB.Ready() {
 			log.Debug("ON REQUEST: Circuit Breaker is in OPEN state")
-			p.ErrorHandler.HandleError(rw, logreq, "Service temporarily unavailable.", 503)
+			p.ResponseHandler.Handle(rw, logreq, "Service temporarily unavailable.", 503)
 			return nil
 		}
 		log.Debug("ON REQUEST: Circuit Breaker is in CLOSED or HALF-OPEN state")
@@ -699,7 +699,7 @@ func (p *ReverseProxy) WrappedServeHTTP(rw http.ResponseWriter, req *http.Reques
 		}).Error("http: proxy error: ", err)
 
 		if strings.Contains(err.Error(), "timeout awaiting response headers") {
-			p.ErrorHandler.HandleError(rw, logreq, "Upstream service reached hard timeout.", http.StatusGatewayTimeout)
+			p.ResponseHandler.Handle(rw, logreq, "Upstream service reached hard timeout.", http.StatusGatewayTimeout)
 
 			if p.TykAPISpec.Proxy.ServiceDiscovery.UseDiscoveryService {
 				if ServiceCache != nil {
@@ -711,16 +711,16 @@ func (p *ReverseProxy) WrappedServeHTTP(rw http.ResponseWriter, req *http.Reques
 		}
 
 		if strings.Contains(err.Error(), "context canceled") {
-			p.ErrorHandler.HandleError(rw, logreq, "Client closed request", 499)
+			p.ResponseHandler.Handle(rw, logreq, "Client closed request", 499)
 			return nil
 		}
 
 		if strings.Contains(err.Error(), "no such host") {
-			p.ErrorHandler.HandleError(rw, logreq, "Upstream host lookup failed", http.StatusInternalServerError)
+			p.ResponseHandler.Handle(rw, logreq, "Upstream host lookup failed", http.StatusInternalServerError)
 			return nil
 		}
 
-		p.ErrorHandler.HandleError(rw, logreq, "There was a problem proxying the request", http.StatusInternalServerError)
+		p.ResponseHandler.Handle(rw, logreq, "There was a problem proxying the request", http.StatusInternalServerError)
 		return nil
 
 	}

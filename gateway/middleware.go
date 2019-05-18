@@ -92,10 +92,10 @@ func createMiddleware(mw TykMiddleware) func(http.Handler) http.Handler {
 				h.ServeHTTP(w, r)
 				return
 			}
-			err, errCode := mw.ProcessRequest(w, r, mwConf)
+			err, code := mw.ProcessRequest(w, r, mwConf)
 			if err != nil {
-				handler := ErrorHandler{*mw.Base()}
-				handler.HandleError(w, r, err.Error(), errCode)
+				handler := ResponseHandler{*mw.Base()}
+				handler.Handle(w, r, err.Error(), code)
 
 				meta["error"] = err.Error()
 
@@ -103,17 +103,17 @@ func createMiddleware(mw TykMiddleware) func(http.Handler) http.Handler {
 				job.TimingKv("exec_time", finishTime.Nanoseconds(), meta)
 				job.TimingKv(eventName+".exec_time", finishTime.Nanoseconds(), meta)
 
-				mw.Logger().WithError(err).WithField("code", errCode).WithField("ns", finishTime.Nanoseconds()).Debug("Finished")
+				mw.Logger().WithError(err).WithField("code", code).WithField("ns", finishTime.Nanoseconds()).Debug("Finished")
 				return
 			}
 
 			finishTime := time.Since(startTime)
 			job.TimingKv("exec_time", finishTime.Nanoseconds(), meta)
 			job.TimingKv(eventName+".exec_time", finishTime.Nanoseconds(), meta)
-			mw.Logger().WithField("code", errCode).WithField("ns", finishTime.Nanoseconds()).Debug("Finished")
+			mw.Logger().WithField("code", code).WithField("ns", finishTime.Nanoseconds()).Debug("Finished")
 
 			// Special code, bypasses all other execution
-			if errCode != mwStatusRespond {
+			if code != mwStatusRespond {
 				// No error, carry on...
 				meta["bypass"] = "1"
 				h.ServeHTTP(w, r)

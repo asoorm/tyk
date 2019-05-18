@@ -487,8 +487,8 @@ type DummyProxyHandler struct {
 func (d *DummyProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if found, err := isLoop(r); found {
 		if err != nil {
-			handler := ErrorHandler{*d.SH.Base()}
-			handler.HandleError(w, r, err.Error(), http.StatusInternalServerError)
+			handler := ResponseHandler{*d.SH.Base()}
+			handler.Handle(w, r, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -506,8 +506,8 @@ func (d *DummyProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if targetAPI := fuzzyFindAPI(r.URL.Hostname()); targetAPI != nil {
 				handler = targetAPI.middlewareChain.ThisHandler
 			} else {
-				handler := ErrorHandler{*d.SH.Base()}
-				handler.HandleError(w, r, "Can't detect loop target", http.StatusInternalServerError)
+				handler := ResponseHandler{*d.SH.Base()}
+				handler.Handle(w, r, "Can't detect loop target", http.StatusInternalServerError)
 				return
 			}
 		}

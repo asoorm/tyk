@@ -25,31 +25,41 @@ type APIError struct {
 
 // ErrorHandler is invoked whenever there is an issue with a proxied request, most middleware will invoke
 // the ErrorHandler if something is wrong with the request and halt the request processing through the chain
-type ErrorHandler struct {
+type ResponseHandler struct {
 	BaseMiddleware
 }
 
 // HandleError is the actual error handler and will store the error details in analytics if analytics processing is enabled.
-func (e *ErrorHandler) HandleError(w http.ResponseWriter, r *http.Request, errMsg string, errCode int) {
+func (e *ResponseHandler) Handle(w http.ResponseWriter, r *http.Request, responseMsg string, responseCode int) {
 	defer e.Base().UpdateRequestSession(r)
 
 	var templateExtension string
 	var contentType string
 
-	switch r.Header.Get("Content-Type") {
-	case "application/xml":
-		templateExtension = "xml"
-		contentType = "application/xml"
-	default:
+	switch r.Header.Get("Accept") {
+	case "application/json":
 		templateExtension = "json"
 		contentType = "application/json"
+	case "application/xml":
+		templateExtension = "json"
+		contentType = "application/xml"
+	default:
+		// fallback to request Content-Type
+		switch r.Header.Get("Content-Type") {
+		case "application/xml":
+			templateExtension = "xml"
+			contentType = "application/xml"
+		default:
+			templateExtension = "json"
+			contentType = "application/json"
+		}
 	}
 
 	w.Header().Set("Content-Type", contentType)
 
-	templateName := "error_" + strconv.Itoa(errCode) + "." + templateExtension
+	templateName := "error_" + strconv.Itoa(responseCode) + "." + templateExtension
 
-	// Try to use an error template that matches the HTTP error code and the content type: 500.json, 400.xml, etc.
+	// Try to use an error template that matches the HTTP error code and the content type: error_500.json, error_400.xml, etc.
 	tmpl := templates.Lookup(templateName)
 
 	// Fallback to a generic error template, but match the content type: error.json, error.xml, etc.
@@ -66,8 +76,8 @@ func (e *ErrorHandler) HandleError(w http.ResponseWriter, r *http.Request, errMs
 	}
 
 	// Need to return the correct error code!
-	w.WriteHeader(errCode)
-	apiError := APIError{errMsg}
+	w.WriteHeader(responseCode)
+	apiError := APIError{responseMsg}
 	tmpl.Execute(w, &apiError)
 
 	if memProfFile != nil {
@@ -148,7 +158,7 @@ func (e *ErrorHandler) HandleError(w http.ResponseWriter, r *http.Request, errMs
 			t.Month(),
 			t.Year(),
 			t.Hour(),
-			errCode,
+			responseCode,
 			token,
 			t,
 			version,
@@ -186,7 +196,7 @@ func (e *ErrorHandler) HandleError(w http.ResponseWriter, r *http.Request, errMs
 			record.NormalisePath(&e.Spec.GlobalConfig)
 		}
 
-		analytics.RecordHit(&record)
+		_ = analytics.RecordHit(&record)
 	}
 
 	// Report in health check
@@ -203,6 +213,6 @@ func (e *ErrorHandler) HandleError(w http.ResponseWriter, r *http.Request, errMs
 	}
 
 	if memProfFile != nil {
-		pprof.WriteHeapProfile(memProfFile)
+		_ = pprof.WriteHeapProfile(memProfFile)
 	}
 }
