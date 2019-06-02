@@ -31,6 +31,7 @@ import (
 	newrelic "github.com/newrelic/go-agent"
 	"github.com/rs/cors"
 	uuid "github.com/satori/go.uuid"
+	"github.com/valyala/fasthttp/reuseport"
 	"golang.org/x/net/http2"
 	"rsc.io/letsencrypt"
 
@@ -1194,7 +1195,8 @@ func generateListener(listenPort int) (net.Listener, error) {
 		return tls.Listen("tcp", targetPort, &conf)
 	} else {
 		mainLog.WithField("port", targetPort).Info("--> Standard listener (http)")
-		return net.Listen("tcp", targetPort)
+
+		return reuseport.Listen("tcp4", targetPort)
 	}
 }
 

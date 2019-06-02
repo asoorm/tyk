@@ -3,6 +3,7 @@ package gateway
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 	"sync"
@@ -99,7 +100,7 @@ func handleRedisEvent(v interface{}, handled func(NotificationCommand), reloaded
 	case NoticeGatewayLENotification:
 		onLESSLStatusReceivedHandler(notif.Payload)
 	case NoticeApiUpdated, NoticeApiRemoved, NoticeApiAdded, NoticePolicyChanged, NoticeGroupReload:
-		pubSubLog.Info("Reloading endpoints")
+		pubSubLog.Info(fmt.Sprintf("Reloading endpoints: %s", notif.Command))
 		reloadURLStructure(reloaded)
 	case KeySpaceUpdateNotification:
 		handleKeySpaceEventCacheFlush(notif.Payload)
