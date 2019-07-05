@@ -209,10 +209,10 @@ func (m *proxyMux) serve() {
 
 		switch p.protocol {
 		case "tcp", "tls":
-			mainLog.Warning("Starting TCP server on:", p.listener.Addr().String())
+			mainLog.Infof("Starting TCP server on: %s", p.listener.Addr().String())
 			go p.tcpProxy.Serve(p.listener)
 		case "http", "https":
-			mainLog.Warning("Starting HTTP server on:", p.listener.Addr().String())
+			mainLog.Infof("Starting HTTP server on: %s", p.listener.Addr().String())
 			readTimeout := 120 * time.Second
 			writeTimeout := 120 * time.Second
 
