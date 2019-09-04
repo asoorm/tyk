@@ -233,6 +233,12 @@
 			"revisionTime": "2016-11-15T13:54:11Z"
 		},
 		{
+			"checksumSHA1": "Jwujco6zAFG24DcbPVRHgcdlBt8=",
+			"path": "github.com/go-redis/redis",
+			"revision": "3e1f1aba0eebe8ee37d4f49914b4ce7c57f1ad00",
+			"revisionTime": "2019-08-28T11:52:27Z"
+		},
+		{
 			"checksumSHA1": "YhswBYH9lPkmLN5kVz3nqlu6K5Q=",
 			"path": "github.com/gocraft/health",
 			"revision": "25b40f8580168c1f905a6dba35d471cdc51ca629",
