@@ -82,6 +82,11 @@ type HealthCheckerHandler interface {
 	SetRollingWindow(key string, per int64, val string, pipeline bool) (int, []interface{})
 }
 
+type RedisPurgerHandler interface {
+	SetExp(string, int64) error   // Set key expiration
+	GetExp(string) (int64, error) // Returns expiry of a key
+}
+
 const defaultHashAlgorithm = "murmur64"
 
 // If hashing algorithm is empty, use legacy key generation

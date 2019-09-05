@@ -15,7 +15,7 @@ type Purger interface {
 }
 
 type RedisPurger struct {
-	Store storage.Handler
+	Store storage.RedisPurgerHandler
 }
 
 func (r RedisPurger) PurgeLoop(ticker <-chan time.Time) {
