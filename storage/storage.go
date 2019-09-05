@@ -87,6 +87,12 @@ type RedisPurgerHandler interface {
 	GetExp(string) (int64, error) // Returns expiry of a key
 }
 
+type WebhookHandler interface {
+	Connect() bool
+	GetKey(string) (string, error) // Returned string is expected to be a JSON object (user.SessionState)
+	SetKey(string, string, int64) error // Second input string is expected to be a JSON object (user.SessionState)
+}
+
 const defaultHashAlgorithm = "murmur64"
 
 // If hashing algorithm is empty, use legacy key generation

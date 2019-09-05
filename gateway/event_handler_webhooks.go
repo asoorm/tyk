@@ -38,7 +38,7 @@ const (
 type WebHookHandler struct {
 	conf     config.WebHookHandlerConf
 	template *template.Template // non-nil if Init is run without error
-	store    storage.Handler
+	store    storage.WebhookHandler
 
 	contentType      string
 	dashboardService DashboardServiceSender
