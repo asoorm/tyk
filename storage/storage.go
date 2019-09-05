@@ -108,6 +108,13 @@ type RedisOsinStorageHandler interface {
 	SetRawKey(string, string, int64) error
 }
 
+type HostCheckerManagerHandler interface {
+	GetKey(string) (string, error) // Returned string is expected to be a JSON object (user.SessionState)
+	SetKey(string, string, int64) error // Second input string is expected to be a JSON object (user.SessionState)
+	DeleteKey(string) bool
+	AppendToSet(string, string)
+}
+
 const defaultHashAlgorithm = "murmur64"
 
 // If hashing algorithm is empty, use legacy key generation

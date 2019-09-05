@@ -22,7 +22,7 @@ var GlobalHostChecker HostCheckerManager
 
 type HostCheckerManager struct {
 	Id                string
-	store             storage.Handler
+	store             storage.HostCheckerManagerHandler
 	checkerMu         sync.Mutex
 	checker           *HostUptimeChecker
 	stopLoop          bool
