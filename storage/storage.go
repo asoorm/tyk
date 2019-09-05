@@ -121,6 +121,10 @@ type RedisCacheMiddlewareHandler interface {
 	DeleteKey(string) bool
 }
 
+type RPCPurgerHandler interface {
+	GetAndDeleteSet(string) []interface{}
+}
+
 const defaultHashAlgorithm = "murmur64"
 
 // If hashing algorithm is empty, use legacy key generation

@@ -59,7 +59,7 @@ const analyticsKeyName = "tyk-system-analytics"
 // RPCPurger will purge analytics data into a Mongo database, requires that the Mongo DB string is specified
 // in the Config object
 type Purger struct {
-	Store storage.Handler
+	Store storage.RPCPurgerHandler
 }
 
 // Connect Connects to RPC
