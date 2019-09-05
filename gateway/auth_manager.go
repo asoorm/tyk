@@ -21,7 +21,7 @@ import (
 // is valid in any way (e.g. cryptographic signing etc.). Returns
 // a user.SessionState object (deserialised JSON)
 type AuthorisationHandler interface {
-	Init(storage.Handler)
+	Init(storage.AuthManagerHandler)
 	KeyAuthorised(string) (user.SessionState, bool)
 	KeyExpired(*user.SessionState) bool
 }
@@ -29,12 +29,12 @@ type AuthorisationHandler interface {
 // SessionHandler handles all update/create/access session functions and deals exclusively with
 // user.SessionState objects, not identity
 type SessionHandler interface {
-	Init(store storage.Handler)
+	Init(store storage.AuthManagerHandler)
 	UpdateSession(keyName string, session *user.SessionState, resetTTLTo int64, hashed bool) error
 	RemoveSession(keyName string, hashed bool) bool
 	SessionDetail(keyName string, hashed bool) (user.SessionState, bool)
 	Sessions(filter string) []string
-	Store() storage.Handler
+	Store() storage.AuthManagerHandler
 	ResetQuota(string, *user.SessionState, bool)
 	Stop()
 }
@@ -43,7 +43,7 @@ const sessionPoolDefaultSize = 50
 const sessionBufferDefaultSize = 1000
 
 type sessionUpdater struct {
-	store      storage.Handler
+	store      storage.AuthManagerHandler
 	once       sync.Once
 	updateChan chan *SessionUpdate
 	poolSize   int
@@ -57,7 +57,7 @@ func init() {
 	defaultSessionUpdater = &sessionUpdater{}
 }
 
-func (s *sessionUpdater) Init(store storage.Handler) {
+func (s *sessionUpdater) Init(store storage.AuthManagerHandler) {
 	s.once.Do(func() {
 		s.store = store
 		// check pool size in config and set to 50 if unset
@@ -109,13 +109,13 @@ func (s *sessionUpdater) updateWorker() {
 }
 
 // DefaultAuthorisationManager implements AuthorisationHandler,
-// requires a storage.Handler to interact with key store
+// requires a storage.AuthManagerHandler to interact with key store
 type DefaultAuthorisationManager struct {
-	store storage.Handler
+	store storage.AuthManagerHandler
 }
 
 type DefaultSessionManager struct {
-	store                    storage.Handler
+	store                    storage.AuthManagerHandler
 	asyncWrites              bool
 	disableCacheSessionState bool
 	orgID                    string
@@ -128,7 +128,7 @@ type SessionUpdate struct {
 	ttl      int64
 }
 
-func (b *DefaultAuthorisationManager) Init(store storage.Handler) {
+func (b *DefaultAuthorisationManager) Init(store storage.AuthManagerHandler) {
 	b.store = store
 	b.store.Connect()
 }
@@ -162,7 +162,7 @@ func (b *DefaultAuthorisationManager) KeyExpired(newSession *user.SessionState) 
 	return false
 }
 
-func (b *DefaultSessionManager) Init(store storage.Handler) {
+func (b *DefaultSessionManager) Init(store storage.AuthManagerHandler) {
 	b.asyncWrites = config.Global().UseAsyncSessionWrite
 	b.store = store
 	b.store.Connect()
@@ -178,7 +178,7 @@ func (b *DefaultSessionManager) Init(store storage.Handler) {
 	}
 }
 
-func (b *DefaultSessionManager) Store() storage.Handler {
+func (b *DefaultSessionManager) Store() storage.AuthManagerHandler {
 	return b.store
 }
 

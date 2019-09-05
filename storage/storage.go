@@ -61,6 +61,22 @@ type AnalyticsHandler interface {
 	AppendToSetPipelinedBytes(string, [][]byte)
 }
 
+type AuthManagerHandler interface {
+	Connect() bool
+	GetKey(string) (string, error) // Returned string is expected to be a JSON object (user.SessionState)
+	GetKeyPrefix() string
+	GetKeys(string) []string
+	GetRawKey(string) (string, error)
+	GetMultiKey([]string) ([]string, error)
+	SetRollingWindow(key string, per int64, val string, pipeline bool) (int, []interface{})
+	GetRollingWindow(key string, per int64, pipeline bool) (int, []interface{})
+	SetKey(string, string, int64) error // Second input string is expected to be a JSON object (user.SessionState)
+	SetRawKey(string, string, int64) error
+	DeleteKey(string) bool
+	DeleteRawKey(string) bool
+	IncrememntWithExpire(string, int64) int64
+}
+
 const defaultHashAlgorithm = "murmur64"
 
 // If hashing algorithm is empty, use legacy key generation
