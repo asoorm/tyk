@@ -115,6 +115,12 @@ type HostCheckerManagerHandler interface {
 	AppendToSet(string, string)
 }
 
+type RedisCacheMiddlewareHandler interface {
+	GetKey(string) (string, error) // Returned string is expected to be a JSON object (user.SessionState)
+	SetKey(string, string, int64) error // Second input string is expected to be a JSON object (user.SessionState)
+	DeleteKey(string) bool
+}
+
 const defaultHashAlgorithm = "murmur64"
 
 // If hashing algorithm is empty, use legacy key generation
