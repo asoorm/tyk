@@ -77,6 +77,11 @@ type AuthManagerHandler interface {
 	IncrememntWithExpire(string, int64) int64
 }
 
+type HealthCheckerHandler interface {
+	Connect() bool
+	SetRollingWindow(key string, per int64, val string, pipeline bool) (int, []interface{})
+}
+
 const defaultHashAlgorithm = "murmur64"
 
 // If hashing algorithm is empty, use legacy key generation

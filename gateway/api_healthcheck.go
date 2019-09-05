@@ -34,7 +34,7 @@ type HealthCheckValues struct {
 }
 
 type DefaultHealthChecker struct {
-	storage storage.Handler
+	storage storage.HealthCheckerHandler
 	APIID   string
 }
 
