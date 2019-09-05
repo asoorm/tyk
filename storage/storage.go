@@ -93,6 +93,21 @@ type WebhookHandler interface {
 	SetKey(string, string, int64) error // Second input string is expected to be a JSON object (user.SessionState)
 }
 
+type RedisOsinStorageHandler interface {
+	GetKey(string) (string, error) // Returned string is expected to be a JSON object (user.SessionState)
+	GetKeysAndValuesWithFilter(string) map[string]string
+	GetSet(string) (map[string]string, error)
+	GetSortedSetRange(string, string, string) ([]string, []float64, error)
+	RemoveSortedSetRange(string, string, string) error
+	SetKey(string, string, int64) error // Second input string is expected to be a JSON object (user.SessionState)
+	AddToSet(string, string)
+	RemoveFromSet(string, string)
+	DeleteKey(string) bool
+	AddToSortedSet(string, string, float64)
+	GetRawKey(string) (string, error)
+	SetRawKey(string, string, int64) error
+}
+
 const defaultHashAlgorithm = "murmur64"
 
 // If hashing algorithm is empty, use legacy key generation
