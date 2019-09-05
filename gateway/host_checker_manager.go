@@ -72,7 +72,7 @@ const (
 	UptimeAnalytics_KEYNAME = "tyk-uptime-analytics"
 )
 
-func (hc *HostCheckerManager) Init(store storage.Handler) {
+func (hc *HostCheckerManager) Init(store storage.HostCheckerManagerHandler) {
 	hc.store = store
 	hc.unhealthyHostList = make(map[string]bool)
 	hc.resetsInitiated = make(map[string]bool)
@@ -499,7 +499,7 @@ func (hc *HostCheckerManager) RecordUptimeAnalytics(report HostHealthReport) err
 	return nil
 }
 
-func InitHostCheckManager(store storage.Handler) {
+func InitHostCheckManager(store storage.HostCheckerManagerHandler) {
 	// Already initialized
 	if GlobalHostChecker.Id != "" {
 		return

@@ -927,7 +927,12 @@ func (a APIDefinitionLoader) getExtendedPathSpecs(apiVersionDef apidef.VersionIn
 func (a *APISpec) Init(authStore, sessionStore, healthStore, orgStore storage.Handler) {
 	a.AuthManager.Init(authStore)
 	a.SessionManager.Init(sessionStore)
-	a.Health.Init(healthStore)
+
+	hs, ok := healthStore.(storage.HealthCheckerHandler)
+	if !ok {
+		log.Fatal("Expected HealthCheckerHandler")
+	}
+	a.Health.Init(hs)
 	a.OrgSessionManager.Init(orgStore)
 }
 

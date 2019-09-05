@@ -20,7 +20,7 @@ const (
 )
 
 type HealthChecker interface {
-	Init(storage.Handler)
+	Init(handler storage.HealthCheckerHandler)
 	ApiHealthValues() (HealthCheckValues, error)
 	StoreCounterVal(HealthPrefix, string)
 }
@@ -38,7 +38,7 @@ type DefaultHealthChecker struct {
 	APIID   string
 }
 
-func (h *DefaultHealthChecker) Init(storeType storage.Handler) {
+func (h *DefaultHealthChecker) Init(storeType storage.HealthCheckerHandler) {
 	if !config.Global().HealthCheck.EnableHealthChecks {
 		return
 	}
