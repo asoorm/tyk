@@ -976,6 +976,14 @@
             "stream_path": {
               "type": "string"
             },
+            "stream_format": {
+              "type": "string",
+              "enum": ["raw_bytes", "event_source"],
+              "default": "raw_bytes"
+            },
+            "heartbeat": {
+              "type": "string"
+            },
             "timeout": {
               "type": "string"
             },
