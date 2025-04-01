@@ -22,7 +22,7 @@ type Stream struct {
 	allowedUnsafe []string
 	streamConfig  string
 	stream        *service.Stream
-	log           *logrus.Logger
+	log           *logrus.Entry
 }
 
 // NewStream creates a new stream without initializing it
@@ -39,7 +39,7 @@ func NewStream(allowUnsafe []string) *Stream {
 	}
 
 	return &Stream{
-		log:           logger,
+		log:           logger.WithFields(logrus.Fields{}),
 		allowedUnsafe: allowUnsafe,
 	}
 }
@@ -47,14 +47,18 @@ func NewStream(allowUnsafe []string) *Stream {
 // SetLogger to be used by the stream
 func (s *Stream) SetLogger(logger *logrus.Logger) {
 	if logger != nil {
-		s.log = logger
+		s.log = logger.WithFields(logrus.Fields{})
 	}
 }
 
 // Start loads up the configuration and starts the stream. Non blocking
 func (s *Stream) Start(config map[string]interface{}, mux service.HTTPMultiplexer) error {
-	s.log.Debugf("Starting stream")
-
+	if adapter, ok := mux.(*HandleFuncAdapter); ok {
+		s.log = s.log.WithField("streamID", adapter.StreamID)
+		s.log.Debugf("Starting stream")
+	} else {
+		s.log.Debugf("Starting stream (ID unknown)")
+	}
 	configPayload, err := yaml.Marshal(config)
 	if err != nil {
 		s.log.Errorf("Failed to marshal config: %v", err)
