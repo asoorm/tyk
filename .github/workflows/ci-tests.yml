@@ -118,7 +118,7 @@ jobs:
       # Regardless that the base image provides a python release, we need
       # setup-python so it properly configures the python3-venv.
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
